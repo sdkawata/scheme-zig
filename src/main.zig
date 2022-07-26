@@ -12,6 +12,7 @@ const Parser = struct {
 // TYPE:3 number(32bit) value:number additional:none
 // TYPE:4 cons cell value:none additional:CAR pointer(8byte) + CDR pointer(8byte)
 // TYPE:5 nil value:none additional:none
+// TYPE:6 symbol value:len additional:string(length: value)
 
 const ObjHeader = extern struct {
     i: u64,
@@ -21,6 +22,11 @@ const ObjConsCell = extern struct {
     header: ObjHeader,
     car: *ObjHeader,
     cdr: *ObjHeader,
+};
+
+const SymbolObj = extern struct {
+    header: ObjHeader,
+    str: [1]u8, // actually have variable length
 };
 
 const ParseError  = error {
@@ -33,6 +39,7 @@ const TYPE_FALSE: TYPE_OF_OBJ_TYPE = 2;
 const TYPE_NUMBER: TYPE_OF_OBJ_TYPE = 3;
 const TYPE_CONS: TYPE_OF_OBJ_TYPE = 4;
 const TYPE_NIL: TYPE_OF_OBJ_TYPE = 5;
+const TYPE_SYMBOL: TYPE_OF_OBJ_TYPE = 6;
 
 const ObjPool = struct {
     allocator: std.mem.Allocator,
@@ -44,6 +51,14 @@ pub fn obj_type (header: *ObjHeader) TYPE_OF_OBJ_TYPE {
 
 pub fn obj_as_number(header: *ObjHeader) i32 {
     return @intCast(i32, header.i >> 32);
+}
+
+pub fn obj_as_symbol(header: *ObjHeader, allocator: std.mem.Allocator) ![] const u8 {
+    const len = @intCast(usize, obj_as_number(header));
+    const slice: []u8 = try allocator.alloc(u8, @intCast(usize, len));
+    const symbol = @ptrCast([*] const u8, &@ptrCast(*SymbolObj, header).str[0]);
+    @memcpy(@ptrCast([*] u8, &slice[0]), symbol, len);
+    return slice;
 }
 
 pub fn obj_car(header: *ObjHeader) *ObjHeader {
@@ -63,6 +78,14 @@ pub fn objpool_create(allocator: std.mem.Allocator) !*ObjPool {
     return objPool;
 }
 
+pub fn objpool_create_symbol(pool: *ObjPool, str: [] const u8) !*ObjHeader {
+    const obj = @ptrCast(*SymbolObj, @alignCast(8, try pool.allocator.alloc(u8, @sizeOf(ObjHeader) + str.len)));
+    const header = &obj.header;
+    try objpool_init_header(header, TYPE_SYMBOL, @intCast(i32, str.len));
+    @memcpy(@ptrCast([*] u8, &obj.str[0]), @ptrCast([*] const u8, &str[0]), str.len);
+    return header;
+}
+
 pub fn objpool_init_header(header:*ObjHeader, o_type: TYPE_OF_OBJ_TYPE, value: i32) !void {
     header.i = @intCast(u64, o_type) + (@intCast(u64, value) << 32);
 }
@@ -73,24 +96,24 @@ pub fn objpool_create_simple(objPool: *ObjPool, o_type: TYPE_OF_OBJ_TYPE, value:
     return header;
 }
 
-pub fn objpool_create_true(objPool: *ObjPool) !*ObjHeader {
-    return objpool_create_simple(objPool, TYPE_TRUE, 0);
+pub fn objpool_create_true(pool: *ObjPool) !*ObjHeader {
+    return objpool_create_simple(pool, TYPE_TRUE, 0);
 }
 
-pub fn objpool_create_false(objPool: *ObjPool) !*ObjHeader {
-    return objpool_create_simple(objPool, TYPE_FALSE, 0);
+pub fn objpool_create_false(pool: *ObjPool) !*ObjHeader {
+    return objpool_create_simple(pool, TYPE_FALSE, 0);
 }
 
-pub fn objpool_create_number(objPool: *ObjPool, n: i32) !*ObjHeader {
-    return objpool_create_simple(objPool, TYPE_NUMBER, n);
+pub fn objpool_create_number(pool: *ObjPool, n: i32) !*ObjHeader {
+    return objpool_create_simple(pool, TYPE_NUMBER, n);
 }
 
-pub fn objpool_create_nil(objPool: *ObjPool) !*ObjHeader {
-    return objpool_create_simple(objPool, TYPE_NIL, 0);
+pub fn objpool_create_nil(pool: *ObjPool) !*ObjHeader {
+    return objpool_create_simple(pool, TYPE_NIL, 0);
 }
 
-pub fn objpool_create_cons(objPool: *ObjPool, car: *ObjHeader, cdr:*ObjHeader) !*ObjHeader {
-    const cell: *ObjConsCell = try objPool.allocator.create(ObjConsCell);
+pub fn objpool_create_cons(pool: *ObjPool, car: *ObjHeader, cdr:*ObjHeader) !*ObjHeader {
+    const cell: *ObjConsCell = try pool.allocator.create(ObjConsCell);
     try objpool_init_header(&cell.header, TYPE_CONS, 0);
     cell.car = car;
     cell.cdr = cdr;
@@ -124,6 +147,13 @@ pub fn parse_list(p: *Parser, pool: *ObjPool) anyerror!*ObjHeader {
     }
 }
 
+pub fn parse_simple_symbol(p: *Parser, pool: *ObjPool, start_pos: usize) anyerror!*ObjHeader {
+    while(p.s.len > p.p and ((p.s[p.p] >= 'a' and p.s[p.p] <= 'z') or (p.s[p.p] >= 'A' and p.s[p.p] <= 'Z'))) {
+        p.p+=1;
+    }
+    return try objpool_create_symbol(pool, p.s[start_pos..p.p]);
+}
+
 pub fn parse_datum(p:*Parser, pool: *ObjPool) anyerror!*ObjHeader {
     if (p.s[p.p] == '#') {
         if (p.s[p.p + 1] == 't') {
@@ -136,10 +166,36 @@ pub fn parse_datum(p:*Parser, pool: *ObjPool) anyerror!*ObjHeader {
         return ParseError.UnexpectedToken;
     } else if (p.s[p.p] >= '0' and p.s[p.p] <= '9') {
         return try parse_number(p, pool);
-    } else if (p.s[p.p] >= '(') {
+    } else if (p.s[p.p] == '(') {
         p.p+=1;
         try parser_skip_whitespaces(p);
         return try parse_list(p, pool);
+    } else if (
+        (p.s[p.p] >= 'a' and p.s[p.p] <= 'z') or
+        (p.s[p.p] >= 'A' and p.s[p.p] <= 'Z') or
+        (p.s[p.p] >= '!') or
+        (p.s[p.p] >= '$') or
+        (p.s[p.p] >= '%') or
+        (p.s[p.p] >= '&') or
+        (p.s[p.p] >= '*') or
+        (p.s[p.p] >= '/') or
+        (p.s[p.p] >= ':') or
+        (p.s[p.p] >= '<') or
+        (p.s[p.p] >= '=') or
+        (p.s[p.p] >= '>') or
+        (p.s[p.p] >= '?') or
+        (p.s[p.p] >= '^') or
+        (p.s[p.p] >= '_') or
+        (p.s[p.p] >= '~')
+    ) {
+        const start_pos = p.p;
+        p.p+=1;
+        return try parse_simple_symbol(p, pool, start_pos);
+    } else if ((p.s[p.p] == '+' or p.s[p.p] == '-') and (p.s.len > (p.p + 1) or p.s[p.p+1] == ' ')) {
+        const symbol = objpool_create_symbol(pool, p.s[p.p..p.p+1]);
+        p.p+=1;
+        try parser_skip_whitespaces(p);
+        return symbol;
     }
     return ParseError.UnexpectedToken;
 }
@@ -189,3 +245,25 @@ test "parse list" {
     try std.testing.expectEqual(TYPE_NIL, obj_type(obj_cdr(obj_cdr(list))));
 }
 
+test "parse symbol" {
+    var genera_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator: std.mem.Allocator = genera_purpose_allocator.allocator();
+    const sym = try parseString("aa", allocator);
+    try std.testing.expectEqual(TYPE_SYMBOL, obj_type(sym));
+    const slice = try obj_as_symbol(sym, allocator);
+    defer allocator.free(slice);
+    const expected: [] const u8 = "aa";
+    try std.testing.expectEqualStrings(expected, slice);
+}
+
+
+test "parse symbol +" {
+    var genera_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator: std.mem.Allocator = genera_purpose_allocator.allocator();
+    const sym = try parseString("+", allocator);
+    try std.testing.expectEqual(TYPE_SYMBOL, obj_type(sym));
+    const slice = try obj_as_symbol(sym, allocator);
+    defer allocator.free(slice);
+    const expected: [] const u8 = "+";
+    try std.testing.expectEqualStrings(expected, slice);
+}
