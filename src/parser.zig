@@ -85,6 +85,7 @@ fn parse_datum(p:*Parser, pool: *object.ObjPool) anyerror!object.Obj {
         const symbol = object.create_symbol(pool, p.s[p.p..p.p+1]);
         p.p+=1;
         try parser_skip_whitespaces(p);
+        std.debug.print("symbol created\n", .{});
         return symbol;
     }
     return ParseError.UnexpectedToken;
@@ -96,7 +97,7 @@ pub fn parse(p:*Parser, pool: *object.ObjPool) !object.Obj {
 }
 
 
-pub fn parseString(s: [] const u8, pool: *object.ObjPool) !object.Obj {
+pub fn parse_string(s: [] const u8, pool: *object.ObjPool) !object.Obj {
     return try parse(
         &Parser{.s=s, .p=0,},
         pool
@@ -114,9 +115,9 @@ test "parse true & false" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
-    const v_true = try parseString("#t", pool);
+    const v_true = try parse_string("#t", pool);
     try std.testing.expectEqual(object.ObjType.b_true, object.obj_type(v_true));
-    const v_false = try parseString("#f", pool);
+    const v_false = try parse_string("#f", pool);
     try std.testing.expectEqual(object.ObjType.b_false, object.obj_type(v_false));
 }
 
@@ -124,7 +125,7 @@ test "parse number" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
-    const number: object.Obj = try parseString("42", pool);
+    const number: object.Obj = try parse_string("42", pool);
     try std.testing.expectEqual(object.ObjType.number, object.obj_type(number));
     try std.testing.expectEqual(@intCast(i32, 42), object.as_number(number));
 }
@@ -132,8 +133,8 @@ test "parse list" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
-    try std.testing.expectEqual(object.ObjType.nil, object.obj_type(try parseString("()", pool)));
-    const list: object.Obj = try parseString("( 42 43 )", pool);
+    try std.testing.expectEqual(object.ObjType.nil, object.obj_type(try parse_string("()", pool)));
+    const list: object.Obj = try parse_string("( 42 43 )", pool);
     const car: object.Obj = object.get_car(list);
     const cadr: object.Obj = object.get_car(object.get_cdr(list));
     try std.testing.expectEqual(object.ObjType.number, object.obj_type(car));
@@ -147,12 +148,10 @@ test "parse symbol" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
-    const sym = try parseString("aa", pool);
+    const sym = try parse_string("aa", pool);
     try std.testing.expectEqual(object.ObjType.symbol, object.obj_type(sym));
-    const slice = try object.as_symbol(sym, allocator);
-    defer allocator.free(slice);
     const expected: [] const u8 = "aa";
-    try std.testing.expectEqualStrings(expected, slice);
+    try std.testing.expectEqualStrings(expected, try object.as_symbol_noalloc(sym));
 }
 
 
@@ -160,10 +159,8 @@ test "parse symbol +" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
-    const sym = try parseString("+", pool);
+    const sym = try parse_string("+", pool);
     try std.testing.expectEqual(object.ObjType.symbol, object.obj_type(sym));
-    const slice = try object.as_symbol(sym, allocator);
-    defer allocator.free(slice);
     const expected: [] const u8 = "+";
-    try std.testing.expectEqualStrings(expected, slice);
+    try std.testing.expectEqualStrings(expected, try object.as_symbol_noalloc(sym));
 }

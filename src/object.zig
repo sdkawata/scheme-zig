@@ -161,7 +161,7 @@ pub fn destroy_obj_pool(pool: *ObjPool, allocator: std.mem.Allocator) void {
 }
 
 fn align_size(size: usize) usize {
-    return (size + (8-1)) %8 * 8;
+    return (size + (8-1)) / 8 * 8;
 }
 
 fn create(pool: *ObjPool, comptime T: type) !*T {
@@ -272,7 +272,7 @@ pub fn format(obj: Obj, allocator: std.mem.Allocator) ![] const u8 {
 }
 
 
-fn expectFormatEqual(expected: [] const u8, o: Obj) !void {
+pub fn expectFormatEqual(expected: [] const u8, o: Obj) !void {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const actual = try format(o, allocator);
     defer allocator.free(actual);
@@ -289,5 +289,6 @@ test "format" {
     try expectFormatEqual("symbol", try create_symbol(pool, "symbol"));
     try expectFormatEqual("()", try create_nil(pool));
     try expectFormatEqual("(42 43)", try create_cons(pool,  try create_number(pool, 42), try create_cons(pool, try create_number(pool, 43), try create_nil(pool))));
+    try expectFormatEqual("(+ 43)", try create_cons(pool,  try create_symbol(pool, "+"), try create_cons(pool, try create_number(pool, 43), try create_nil(pool))));
     try expectFormatEqual("(42 . 43)", try create_cons(pool,  try create_number(pool, 42), try create_number(pool, 43)));
 }
