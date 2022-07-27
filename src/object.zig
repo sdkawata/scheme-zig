@@ -58,6 +58,11 @@ pub fn as_symbol(header: *ObjHeader, allocator: std.mem.Allocator) ![] const u8 
     return slice;
 }
 
+pub fn as_symbol_noalloc(header: *ObjHeader) ![] const u8 {
+    const len = @intCast(usize, as_number(header));
+    return @ptrCast([*] const u8, &@ptrCast(*SymbolObj, header).str[0])[0..len];
+}
+
 pub fn get_car(header: *ObjHeader) *ObjHeader {
     const consCell = @ptrCast(*ObjConsCell, header);
     return consCell.car;
