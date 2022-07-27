@@ -16,7 +16,7 @@ fn parser_skip_whitespaces(p: *Parser) !void {
     }
 }
 
-fn parse_number(p: *Parser, pool: *object.ObjPool) !*object.ObjHeader {
+fn parse_number(p: *Parser, pool: *object.ObjPool) !object.Obj {
     var val: i32 = 0;
     while(p.s.len > p.p and p.s[p.p] >= '0' and p.s[p.p] <= '9') {
         val = val * 10 + (p.s[p.p] - '0');
@@ -25,26 +25,26 @@ fn parse_number(p: *Parser, pool: *object.ObjPool) !*object.ObjHeader {
     return try object.create_number(pool, val);
 }
 
-fn parse_list(p: *Parser, pool: *object.ObjPool) anyerror!*object.ObjHeader {
+fn parse_list(p: *Parser, pool: *object.ObjPool) anyerror!object.Obj {
     if (p.s[p.p] == ')') {
         p.p+=1;
         return object.create_nil(pool);
     } else {
-        const car: *object.ObjHeader = try parse_datum(p, pool);
+        const car: object.Obj = try parse_datum(p, pool);
         try parser_skip_whitespaces(p);
         const cdr = try parse_list(p, pool);
         return object.create_cons(pool, car, cdr);
     }
 }
 
-fn parse_simple_symbol(p: *Parser, pool: *object.ObjPool, start_pos: usize) anyerror!*object.ObjHeader {
+fn parse_simple_symbol(p: *Parser, pool: *object.ObjPool, start_pos: usize) anyerror!object.Obj {
     while(p.s.len > p.p and ((p.s[p.p] >= 'a' and p.s[p.p] <= 'z') or (p.s[p.p] >= 'A' and p.s[p.p] <= 'Z'))) {
         p.p+=1;
     }
     return try object.create_symbol(pool, p.s[start_pos..p.p]);
 }
 
-fn parse_datum(p:*Parser, pool: *object.ObjPool) anyerror!*object.ObjHeader {
+fn parse_datum(p:*Parser, pool: *object.ObjPool) anyerror!object.Obj {
     if (p.s[p.p] == '#') {
         if (p.s[p.p + 1] == 't') {
             p.p+=2;
@@ -90,13 +90,13 @@ fn parse_datum(p:*Parser, pool: *object.ObjPool) anyerror!*object.ObjHeader {
     return ParseError.UnexpectedToken;
 }
 
-pub fn parse(p:*Parser, pool: *object.ObjPool) !*object.ObjHeader {
+pub fn parse(p:*Parser, pool: *object.ObjPool) !object.Obj {
     try parser_skip_whitespaces(p);
     return parse_datum(p, pool);
 }
 
 
-pub fn parseString(s: [] const u8, pool: *object.ObjPool) !*object.ObjHeader {
+pub fn parseString(s: [] const u8, pool: *object.ObjPool) !object.Obj {
     return try parse(
         &Parser{.s=s, .p=0,},
         pool
@@ -115,7 +115,7 @@ test "parse number" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
-    const number: *object.ObjHeader = try parseString("42", pool);
+    const number: object.Obj = try parseString("42", pool);
     try std.testing.expectEqual(object.ObjType.number, object.obj_type(number));
     try std.testing.expectEqual(@intCast(i32, 42), object.as_number(number));
 }
@@ -124,9 +124,9 @@ test "parse list" {
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
     try std.testing.expectEqual(object.ObjType.nil, object.obj_type(try parseString("()", pool)));
-    const list: *object.ObjHeader = try parseString("( 42 43 )", pool);
-    const car: *object.ObjHeader = object.get_car(list);
-    const cadr: *object.ObjHeader = object.get_car(object.get_cdr(list));
+    const list: object.Obj = try parseString("( 42 43 )", pool);
+    const car: object.Obj = object.get_car(list);
+    const cadr: object.Obj = object.get_car(object.get_cdr(list));
     try std.testing.expectEqual(object.ObjType.number, object.obj_type(car));
     try std.testing.expectEqual(@intCast(i32, 42), object.as_number(car));
     try std.testing.expectEqual(object.ObjType.number, object.obj_type(cadr));
