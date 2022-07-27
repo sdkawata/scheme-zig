@@ -25,13 +25,14 @@ const SymbolObj = extern struct {
 };
 
 
-pub const TYPE_OF_OBJ_TYPE = u32;
-pub const TYPE_TRUE: TYPE_OF_OBJ_TYPE = 1;
-pub const TYPE_FALSE: TYPE_OF_OBJ_TYPE = 2;
-pub const TYPE_NUMBER: TYPE_OF_OBJ_TYPE = 3;
-pub const TYPE_CONS: TYPE_OF_OBJ_TYPE = 4;
-pub const TYPE_NIL: TYPE_OF_OBJ_TYPE = 5;
-pub const TYPE_SYMBOL: TYPE_OF_OBJ_TYPE = 6;
+pub const ObjType =  enum(u32) {
+    b_true,
+    b_false,
+    number,
+    cons,
+    nil,
+    symbol,
+};
 
 const INITIAL_BUF_SIZE = 1000;
 
@@ -41,8 +42,8 @@ pub const ObjPool = struct {
     end: [*] u8,
 };
 
-pub fn obj_type (header: *ObjHeader) TYPE_OF_OBJ_TYPE {
-    return @intCast(u32, header.i & 0xffff);
+pub fn obj_type (header: *ObjHeader) ObjType {
+    return @intToEnum(ObjType, @intCast(u32, header.i & 0xffff));
 }
 
 pub fn as_number(header: *ObjHeader) i32 {
@@ -99,40 +100,40 @@ fn alloc(pool: *ObjPool, size: usize) ![*]u8 {
 pub fn create_symbol(pool: *ObjPool, str: [] const u8) !*ObjHeader {
     const obj = @ptrCast(*SymbolObj, @alignCast(8, try alloc(pool, @sizeOf(ObjHeader) + str.len)));
     const header = &obj.header;
-    try init_header(header, TYPE_SYMBOL, @intCast(i32, str.len));
+    try init_header(header, ObjType.symbol, @intCast(i32, str.len));
     @memcpy(@ptrCast([*] u8, &obj.str[0]), @ptrCast([*] const u8, &str[0]), str.len);
     return header;
 }
 
-fn init_header(header:*ObjHeader, o_type: TYPE_OF_OBJ_TYPE, value: i32) !void {
-    header.i = @intCast(u64, o_type) + (@intCast(u64, value) << 32);
+fn init_header(header:*ObjHeader, o_type: ObjType, value: i32) !void {
+    header.i = @intCast(u64, @enumToInt(o_type)) + (@intCast(u64, value) << 32);
 }
 
-pub fn create_simple(pool: *ObjPool, o_type: TYPE_OF_OBJ_TYPE, value: i32) !*ObjHeader {
+pub fn create_simple(pool: *ObjPool, o_type: ObjType, value: i32) !*ObjHeader {
     const header = try create(pool, ObjHeader);
     try init_header(header, o_type, value);
     return header;
 }
 
 pub fn create_true(pool: *ObjPool) !*ObjHeader {
-    return create_simple(pool, TYPE_TRUE, 0);
+    return create_simple(pool, ObjType.b_true, 0);
 }
 
 pub fn create_false(pool: *ObjPool) !*ObjHeader {
-    return create_simple(pool, TYPE_FALSE, 0);
+    return create_simple(pool, ObjType.b_false, 0);
 }
 
 pub fn create_number(pool: *ObjPool, n: i32) !*ObjHeader {
-    return create_simple(pool, TYPE_NUMBER, n);
+    return create_simple(pool, ObjType.number, n);
 }
 
 pub fn create_nil(pool: *ObjPool) !*ObjHeader {
-    return create_simple(pool, TYPE_NIL, 0);
+    return create_simple(pool, ObjType.nil, 0);
 }
 
 pub fn create_cons(pool: *ObjPool, car: *ObjHeader, cdr:*ObjHeader) !*ObjHeader {
     const cell: *ObjConsCell = try create(pool, ObjConsCell);
-    try init_header(&cell.header, TYPE_CONS, 0);
+    try init_header(&cell.header, ObjType.cons, 0);
     cell.car = car;
     cell.cdr = cdr;
     return @ptrCast(*ObjHeader, cell);

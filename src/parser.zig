@@ -107,8 +107,8 @@ test "parse true & false" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
-    try std.testing.expectEqual(object.TYPE_TRUE, object.obj_type(try parseString("#t", pool)));
-    try std.testing.expectEqual(object.TYPE_FALSE, object.obj_type(try parseString("#f", pool)));
+    try std.testing.expectEqual(object.ObjType.b_true, object.obj_type(try parseString("#t", pool)));
+    try std.testing.expectEqual(object.ObjType.b_false, object.obj_type(try parseString("#f", pool)));
 }
 
 test "parse number" {
@@ -116,22 +116,22 @@ test "parse number" {
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
     const number: *object.ObjHeader = try parseString("42", pool);
-    try std.testing.expectEqual(object.TYPE_NUMBER, object.obj_type(number));
+    try std.testing.expectEqual(object.ObjType.number, object.obj_type(number));
     try std.testing.expectEqual(@intCast(i32, 42), object.as_number(number));
 }
 test "parse list" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
-    try std.testing.expectEqual(object.TYPE_NIL, object.obj_type(try parseString("()", pool)));
+    try std.testing.expectEqual(object.ObjType.nil, object.obj_type(try parseString("()", pool)));
     const list: *object.ObjHeader = try parseString("( 42 43 )", pool);
     const car: *object.ObjHeader = object.get_car(list);
     const cadr: *object.ObjHeader = object.get_car(object.get_cdr(list));
-    try std.testing.expectEqual(object.TYPE_NUMBER, object.obj_type(car));
+    try std.testing.expectEqual(object.ObjType.number, object.obj_type(car));
     try std.testing.expectEqual(@intCast(i32, 42), object.as_number(car));
-    try std.testing.expectEqual(object.TYPE_NUMBER, object.obj_type(cadr));
+    try std.testing.expectEqual(object.ObjType.number, object.obj_type(cadr));
     try std.testing.expectEqual(@intCast(i32, 43), object.as_number(cadr));
-    try std.testing.expectEqual(object.TYPE_NIL, object.obj_type(object.get_cdr(object.get_cdr(list))));
+    try std.testing.expectEqual(object.ObjType.nil, object.obj_type(object.get_cdr(object.get_cdr(list))));
 }
 
 test "parse symbol" {
@@ -139,7 +139,7 @@ test "parse symbol" {
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
     const sym = try parseString("aa", pool);
-    try std.testing.expectEqual(object.TYPE_SYMBOL, object.obj_type(sym));
+    try std.testing.expectEqual(object.ObjType.symbol, object.obj_type(sym));
     const slice = try object.as_symbol(sym, allocator);
     defer allocator.free(slice);
     const expected: [] const u8 = "aa";
@@ -152,7 +152,7 @@ test "parse symbol +" {
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
     const sym = try parseString("+", pool);
-    try std.testing.expectEqual(object.TYPE_SYMBOL, object.obj_type(sym));
+    try std.testing.expectEqual(object.ObjType.symbol, object.obj_type(sym));
     const slice = try object.as_symbol(sym, allocator);
     defer allocator.free(slice);
     const expected: [] const u8 = "+";
