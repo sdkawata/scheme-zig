@@ -95,33 +95,36 @@ pub fn parse(p:*Parser, pool: *object.ObjPool) !*object.ObjHeader {
     return parse_datum(p, pool);
 }
 
-pub fn parseString(s: [] const u8, allocator: std.mem.Allocator) !*object.ObjHeader {
-    const objPool = try object.create_obj_pool(allocator);
+
+pub fn parseString(s: [] const u8, pool: *object.ObjPool) !*object.ObjHeader {
     return try parse(
         &Parser{.s=s, .p=0,},
-        objPool
+        pool
     );
 }
 
 test "parse true & false" {
-    var genera_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator: std.mem.Allocator = genera_purpose_allocator.allocator();
-    try std.testing.expectEqual(object.TYPE_TRUE, object.obj_type(try parseString("#t", allocator)));
-    try std.testing.expectEqual(object.TYPE_FALSE, object.obj_type(try parseString("#f", allocator)));
+    const allocator: std.mem.Allocator = std.testing.allocator;
+    const pool = try object.create_obj_pool(allocator);
+    defer object.destroy_obj_pool(pool, allocator);
+    try std.testing.expectEqual(object.TYPE_TRUE, object.obj_type(try parseString("#t", pool)));
+    try std.testing.expectEqual(object.TYPE_FALSE, object.obj_type(try parseString("#f", pool)));
 }
 
 test "parse number" {
-    var genera_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator: std.mem.Allocator = genera_purpose_allocator.allocator();
-    const number: *object.ObjHeader = try parseString("42", allocator);
+    const allocator: std.mem.Allocator = std.testing.allocator;
+    const pool = try object.create_obj_pool(allocator);
+    defer object.destroy_obj_pool(pool, allocator);
+    const number: *object.ObjHeader = try parseString("42", pool);
     try std.testing.expectEqual(object.TYPE_NUMBER, object.obj_type(number));
     try std.testing.expectEqual(@intCast(i32, 42), object.as_number(number));
 }
 test "parse list" {
-    var genera_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator: std.mem.Allocator = genera_purpose_allocator.allocator();
-    try std.testing.expectEqual(object.TYPE_NIL, object.obj_type(try parseString("()", allocator)));
-    const list: *object.ObjHeader = try parseString("( 42 43 )", allocator);
+    const allocator: std.mem.Allocator = std.testing.allocator;
+    const pool = try object.create_obj_pool(allocator);
+    defer object.destroy_obj_pool(pool, allocator);
+    try std.testing.expectEqual(object.TYPE_NIL, object.obj_type(try parseString("()", pool)));
+    const list: *object.ObjHeader = try parseString("( 42 43 )", pool);
     const car: *object.ObjHeader = object.get_car(list);
     const cadr: *object.ObjHeader = object.get_car(object.get_cdr(list));
     try std.testing.expectEqual(object.TYPE_NUMBER, object.obj_type(car));
@@ -132,9 +135,10 @@ test "parse list" {
 }
 
 test "parse symbol" {
-    var genera_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator: std.mem.Allocator = genera_purpose_allocator.allocator();
-    const sym = try parseString("aa", allocator);
+    const allocator: std.mem.Allocator = std.testing.allocator;
+    const pool = try object.create_obj_pool(allocator);
+    defer object.destroy_obj_pool(pool, allocator);
+    const sym = try parseString("aa", pool);
     try std.testing.expectEqual(object.TYPE_SYMBOL, object.obj_type(sym));
     const slice = try object.as_symbol(sym, allocator);
     defer allocator.free(slice);
@@ -144,9 +148,10 @@ test "parse symbol" {
 
 
 test "parse symbol +" {
-    var genera_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator: std.mem.Allocator = genera_purpose_allocator.allocator();
-    const sym = try parseString("+", allocator);
+    const allocator: std.mem.Allocator = std.testing.allocator;
+    const pool = try object.create_obj_pool(allocator);
+    defer object.destroy_obj_pool(pool, allocator);
+    const sym = try parseString("+", pool);
     try std.testing.expectEqual(object.TYPE_SYMBOL, object.obj_type(sym));
     const slice = try object.as_symbol(sym, allocator);
     defer allocator.free(slice);

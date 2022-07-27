@@ -75,9 +75,10 @@ pub fn create_obj_pool(allocator: std.mem.Allocator) !*ObjPool {
     return pool;
 }
 
-//pub fn destroy_obj_pool(pool: *ObjPool) void {
-//
-//}
+pub fn destroy_obj_pool(pool: *ObjPool, allocator: std.mem.Allocator) void {
+    allocator.free(pool.buf);
+    allocator.destroy(pool);
+}
 
 fn align_size(size: usize) usize {
     return (size + (8-1)) %8 * 8;
