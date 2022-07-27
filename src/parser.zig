@@ -1,18 +1,40 @@
 const std = @import("std");
 const object = @import("object.zig");
 
-const ParseError  = error {
+pub const ParseError  = error {
     UnexpectedToken,
+    UnexpectedEOF,
+    EOF,
+};
+pub const PeekError = error {
+    EOF,
 };
 
-const Parser = struct {
+pub const Parser = struct {
     s: [] const u8,
     p: usize,
 };
 
-fn parser_skip_whitespaces(p: *Parser) !void {
-    while(p.s.len > p.p and p.s[p.p] == ' ') {
-        p.p+=1;
+fn peek(p: *Parser, offset: usize) PeekError!u8 {
+    if (p.s.len <= (p.p + offset)) {
+        return PeekError.EOF;
+    }
+    return p.s[p.p + offset];
+}
+
+pub fn is_char_left(p: *Parser) bool {
+    return p.s.len > p.p;
+}
+
+pub fn skip_whitespaces(p: *Parser) !void {
+    while(true) {
+        const peeked = peek(p, 0) catch return;
+        if (peeked == ' ' or peeked == '\r' or peeked == '\n') {
+
+            p.p+=1;
+        } else {
+            return;
+        }
     }
 }
 
@@ -31,68 +53,85 @@ fn parse_list(p: *Parser, pool: *object.ObjPool) anyerror!object.Obj {
         return object.create_nil(pool);
     } else {
         const car: object.Obj = try parse_datum(p, pool);
-        try parser_skip_whitespaces(p);
+        try skip_whitespaces(p);
         const cdr = try parse_list(p, pool);
         return object.create_cons(pool, car, cdr);
     }
 }
+fn is_special_initial(c: u8) bool {
+    return (c == '!') or
+        (c == '$') or
+        (c == '%') or
+        (c == '&') or
+        (c == '*') or
+        (c == '/') or
+        (c == ':') or
+        (c == '<') or
+        (c == '=') or
+        (c == '>') or
+        (c == '?') or
+        (c == '^') or
+        (c == '_') or
+        (c == '~');
+}
 
 fn parse_simple_symbol(p: *Parser, pool: *object.ObjPool, start_pos: usize) anyerror!object.Obj {
-    while(p.s.len > p.p and ((p.s[p.p] >= 'a' and p.s[p.p] <= 'z') or (p.s[p.p] >= 'A' and p.s[p.p] <= 'Z'))) {
-        p.p+=1;
+    while(true) {
+        const peeked = peek(p,0) catch 0;
+        if (
+            (peeked >= 'a' and peeked <= 'z') or
+            (peeked >= 'A' and peeked <= 'Z') or
+            is_special_initial(peeked)
+        ) {
+            p.p+=1;
+        } else {
+            break;
+        }
     }
     return try object.create_symbol(pool, p.s[start_pos..p.p]);
 }
 
 fn parse_datum(p:*Parser, pool: *object.ObjPool) anyerror!object.Obj {
-    if (p.s[p.p] == '#') {
-        if (p.s[p.p + 1] == 't') {
-            p.p+=2;
-            return try object.create_true(pool);
-        } else if (p.s[p.p + 1] == 'f') {
-            p.p+=2;
-            return try object.create_false(pool);
+    const peeked = try peek(p, 0);
+    if (peeked == '#') {
+        switch(peek(p, 1) catch return ParseError.UnexpectedEOF) {
+            't' => {
+                p.p+=2;
+                return object.create_true(pool);
+            },
+            'f' => {
+                p.p+=2;
+                return object.create_false(pool);
+            },
+            else => return ParseError.UnexpectedToken,
         }
-        return ParseError.UnexpectedToken;
-    } else if (p.s[p.p] >= '0' and p.s[p.p] <= '9') {
+    } else if (peeked >= '0' and peeked <= '9') {
         return try parse_number(p, pool);
-    } else if (p.s[p.p] == '(') {
+    } else if (peeked == '(') {
         p.p+=1;
-        try parser_skip_whitespaces(p);
+        try skip_whitespaces(p);
         return try parse_list(p, pool);
     } else if (
-        (p.s[p.p] >= 'a' and p.s[p.p] <= 'z') or
-        (p.s[p.p] >= 'A' and p.s[p.p] <= 'Z') or
-        (p.s[p.p] >= '!') or
-        (p.s[p.p] >= '$') or
-        (p.s[p.p] >= '%') or
-        (p.s[p.p] >= '&') or
-        (p.s[p.p] >= '*') or
-        (p.s[p.p] >= '/') or
-        (p.s[p.p] >= ':') or
-        (p.s[p.p] >= '<') or
-        (p.s[p.p] >= '=') or
-        (p.s[p.p] >= '>') or
-        (p.s[p.p] >= '?') or
-        (p.s[p.p] >= '^') or
-        (p.s[p.p] >= '_') or
-        (p.s[p.p] >= '~')
+        (peeked >= 'a' and peeked <= 'z') or
+        (peeked >= 'A' and peeked <= 'Z') or
+        is_special_initial(peeked)
     ) {
         const start_pos = p.p;
         p.p+=1;
         return try parse_simple_symbol(p, pool, start_pos);
-    } else if ((p.s[p.p] == '+' or p.s[p.p] == '-') and (p.s.len > (p.p + 1) or p.s[p.p+1] == ' ')) {
+    } else if ((peeked == '+' or peeked == '-')) {
+        // TODO parse +100 and -100
         const symbol = object.create_symbol(pool, p.s[p.p..p.p+1]);
         p.p+=1;
-        try parser_skip_whitespaces(p);
-        std.debug.print("symbol created\n", .{});
+        try skip_whitespaces(p);
         return symbol;
     }
+    std.debug.print("unexpected token pos:{} token:{}\n", .{p.p, peeked});
     return ParseError.UnexpectedToken;
 }
 
 pub fn parse(p:*Parser, pool: *object.ObjPool) !object.Obj {
-    try parser_skip_whitespaces(p);
+    try skip_whitespaces(p);
     return parse_datum(p, pool);
 }
 
@@ -104,17 +143,10 @@ pub fn parse_string(s: [] const u8, pool: *object.ObjPool) !object.Obj {
     );
 }
 
-fn expectFormatEqual(expected: [] const u8, o: object.Obj) !void {
-    const allocator: std.mem.Allocator = std.testing.allocator;
-    const actual = object.format(o);
-    defer allocator.destroy(actual);
-    try std.testing.expectEqualStrings(expected, actual);
-}
-
 test "parse true & false" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
-    defer object.destroy_obj_pool(pool, allocator);
+    defer object.destroy_obj_pool(pool);
     const v_true = try parse_string("#t", pool);
     try std.testing.expectEqual(object.ObjType.b_true, object.obj_type(v_true));
     const v_false = try parse_string("#f", pool);
@@ -124,7 +156,7 @@ test "parse true & false" {
 test "parse number" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
-    defer object.destroy_obj_pool(pool, allocator);
+    defer object.destroy_obj_pool(pool);
     const number: object.Obj = try parse_string("42", pool);
     try std.testing.expectEqual(object.ObjType.number, object.obj_type(number));
     try std.testing.expectEqual(@intCast(i32, 42), object.as_number(number));
@@ -132,7 +164,7 @@ test "parse number" {
 test "parse list" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
-    defer object.destroy_obj_pool(pool, allocator);
+    defer object.destroy_obj_pool(pool);
     try std.testing.expectEqual(object.ObjType.nil, object.obj_type(try parse_string("()", pool)));
     const list: object.Obj = try parse_string("( 42 43 )", pool);
     const car: object.Obj = object.get_car(list);
@@ -147,20 +179,20 @@ test "parse list" {
 test "parse symbol" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
-    defer object.destroy_obj_pool(pool, allocator);
-    const sym = try parse_string("aa", pool);
+    defer object.destroy_obj_pool(pool);
+    const sym = try parse_string("very_long_symbol_name", pool);
     try std.testing.expectEqual(object.ObjType.symbol, object.obj_type(sym));
-    const expected: [] const u8 = "aa";
-    try std.testing.expectEqualStrings(expected, try object.as_symbol_noalloc(sym));
+    const expected: [] const u8 = "very_long_symbol_name";
+    try std.testing.expectEqualStrings(expected, try object.as_symbol(pool, sym));
 }
 
 
 test "parse symbol +" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
-    defer object.destroy_obj_pool(pool, allocator);
+    defer object.destroy_obj_pool(pool);
     const sym = try parse_string("+", pool);
     try std.testing.expectEqual(object.ObjType.symbol, object.obj_type(sym));
     const expected: [] const u8 = "+";
-    try std.testing.expectEqualStrings(expected, try object.as_symbol_noalloc(sym));
+    try std.testing.expectEqualStrings(expected, try object.as_symbol(pool, sym));
 }

@@ -21,7 +21,7 @@ test "execute tests scm file" {
         if (!std.mem.eql(u8, ".scm", path.name[path.name.len-4..path.name.len])) {
             continue;
         }
-
+        // std.debug.print("testing {s}\n", .{path.name});
         const name = try std.fmt.allocPrint(allocator, "tests/{s}", .{path.name});
         defer allocator.free(name);
         const file = try std.fs.cwd().openFile(name, .{});
@@ -39,8 +39,16 @@ test "execute tests scm file" {
 
         const evaluator = try eval.create_evaluator(allocator);
         defer eval.destroy_evaluator(evaluator, allocator);
-        const obj = try parser.parse_string(content, evaluator.pool);
-        const evaled = try eval.eval(evaluator, obj);
-        try object.expectFormatEqual(trimed, evaled);
+        var p = parser.Parser{.s = content, .p = 0};
+        var evaled = while(true) {
+            const obj = try parser.parse(&p, evaluator.pool);
+            const evaled = try eval.eval_global(evaluator, obj);
+            try parser.skip_whitespaces(&p);
+            if (! parser.is_char_left(&p)) {
+                break evaled;
+            }
+        } else unreachable;
+
+        try object.expectFormatEqual(evaluator.pool, trimed, evaled);
     }
 }
