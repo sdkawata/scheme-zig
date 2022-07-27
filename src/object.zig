@@ -33,8 +33,12 @@ pub const TYPE_CONS: TYPE_OF_OBJ_TYPE = 4;
 pub const TYPE_NIL: TYPE_OF_OBJ_TYPE = 5;
 pub const TYPE_SYMBOL: TYPE_OF_OBJ_TYPE = 6;
 
+const INITIAL_BUF_SIZE = 1000;
+
 pub const ObjPool = struct {
-    allocator: std.mem.Allocator,
+    buf: [] u8,
+    current: [*] u8,
+    end: [*] u8,
 };
 
 pub fn obj_type (header: *ObjHeader) TYPE_OF_OBJ_TYPE {
@@ -64,14 +68,35 @@ pub fn get_cdr(header: *ObjHeader) *ObjHeader {
 }
 
 pub fn create_obj_pool(allocator: std.mem.Allocator) !*ObjPool {
-    const objPool = try allocator.create(ObjPool);
-    objPool.allocator = allocator;
-    std.log.info("{}\n", .{objPool.allocator});
-    return objPool;
+    const pool = try allocator.create(ObjPool);
+    pool.buf = try allocator.alloc(u8, INITIAL_BUF_SIZE);
+    pool.current = @ptrCast([*] u8, &pool.buf[0]);
+    pool.end = pool.current + INITIAL_BUF_SIZE;
+    return pool;
+}
+
+//pub fn destroy_obj_pool(pool: *ObjPool) void {
+//
+//}
+
+fn align_size(size: usize) usize {
+    return (size + (8-1)) %8 * 8;
+}
+
+fn create(pool: *ObjPool, comptime T: type) !*T {
+    const ptr = @ptrCast(*T, @alignCast(@alignOf(T), pool.current));
+    pool.current+= align_size(@sizeOf(T));
+    return ptr;
+}
+
+fn alloc(pool: *ObjPool, size: usize) ![*]u8 {
+    const ptr = @ptrCast([*]u8, pool.current);
+    pool.current+= align_size(size);
+    return ptr;
 }
 
 pub fn create_symbol(pool: *ObjPool, str: [] const u8) !*ObjHeader {
-    const obj = @ptrCast(*SymbolObj, @alignCast(8, try pool.allocator.alloc(u8, @sizeOf(ObjHeader) + str.len)));
+    const obj = @ptrCast(*SymbolObj, @alignCast(8, try alloc(pool, @sizeOf(ObjHeader) + str.len)));
     const header = &obj.header;
     try init_header(header, TYPE_SYMBOL, @intCast(i32, str.len));
     @memcpy(@ptrCast([*] u8, &obj.str[0]), @ptrCast([*] const u8, &str[0]), str.len);
@@ -82,8 +107,8 @@ fn init_header(header:*ObjHeader, o_type: TYPE_OF_OBJ_TYPE, value: i32) !void {
     header.i = @intCast(u64, o_type) + (@intCast(u64, value) << 32);
 }
 
-pub fn create_simple(objPool: *ObjPool, o_type: TYPE_OF_OBJ_TYPE, value: i32) !*ObjHeader {
-    const header = try objPool.allocator.create(ObjHeader);
+pub fn create_simple(pool: *ObjPool, o_type: TYPE_OF_OBJ_TYPE, value: i32) !*ObjHeader {
+    const header = try create(pool, ObjHeader);
     try init_header(header, o_type, value);
     return header;
 }
@@ -105,7 +130,7 @@ pub fn create_nil(pool: *ObjPool) !*ObjHeader {
 }
 
 pub fn create_cons(pool: *ObjPool, car: *ObjHeader, cdr:*ObjHeader) !*ObjHeader {
-    const cell: *ObjConsCell = try pool.allocator.create(ObjConsCell);
+    const cell: *ObjConsCell = try create(pool, ObjConsCell);
     try init_header(&cell.header, TYPE_CONS, 0);
     cell.car = car;
     cell.cdr = cdr;
