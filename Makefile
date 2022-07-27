@@ -1,2 +1,2 @@
 test:
-	zig test src/parser.zig
+	zig test src/main.zig

@@ -11,6 +11,7 @@ pub const Obj = u64;
 // type false value:none
 // type nil value: none
 // type number(32bit) value: number
+// type opaque value: number which meaning is given by executor
 // memory layout
 // |<- obj value(32bit) -> |<- obj tag(32 bit) -> |<- additional (any byte) >|
 // TYPE:4 cons cell value:none additional:CAR pointer(8byte) + CDR pointer(8byte)
@@ -36,6 +37,7 @@ const ObjValueType = enum(u16) {
     b_false,
     number_i32,
     nil,
+    b_opaque
 };
 const ObjRefType = enum(u32) {
     cons,
@@ -49,6 +51,7 @@ pub const ObjType =  enum(u32) {
     cons,
     nil,
     symbol,
+    b_opaque,
 };
 
 const INITIAL_BUF_SIZE = 1000;
@@ -86,6 +89,7 @@ pub fn obj_type (obj:Obj) ObjType {
             .b_false => .b_false,
             .nil => .nil,
             .number_i32 => .number,
+            .b_opaque => .b_opaque,
         };
     } else {
         return switch(obj_ref_type(obj)) {
@@ -105,7 +109,11 @@ fn obj_ref_value(header: *ObjHeader) i32 {
 } 
 
 pub fn as_number(obj: Obj) i32 {
-    assert(obj_value_type(obj) == .number_i32);
+    assert(is_value(obj) and obj_value_type(obj) == .number_i32);
+    return obj_value(obj);
+}
+pub fn get_opaque_value(obj: Obj) i32 {
+    assert(is_value(obj) and obj_value_type(obj) == .b_opaque);
     return obj_value(obj);
 }
 
@@ -196,6 +204,10 @@ pub fn create_number(_: *ObjPool, n: i32) !Obj {
     return create_value(ObjValueType.number_i32, n);
 }
 
+pub fn create_opaque(_: *ObjPool, n: i32) !Obj {
+    return create_value(ObjValueType.b_opaque, n);
+}
+
 pub fn create_nil(_: *ObjPool) !Obj {
     return create_value(ObjValueType.nil, 0);
 }
@@ -206,4 +218,76 @@ pub fn create_cons(pool: *ObjPool, car: Obj, cdr:Obj) !Obj {
     cell.car = car;
     cell.cdr = cdr;
     return as_obj(@ptrCast(*ObjHeader, cell));
+}
+
+
+const Writer = std.ArrayList(u8);
+
+fn format_symbol(obj: Obj, allocator: std.mem.Allocator, writer: *Writer) !void {
+    const symbol = try as_symbol(obj, allocator);
+    defer allocator.free(symbol);
+    try std.fmt.format(writer.writer(), "{s}", .{symbol});
+}
+
+fn format_cons(obj: Obj, allocator: std.mem.Allocator, writer: *Writer) anyerror!void {
+    var current = obj;
+    var first = true;
+    while(obj_type(current) == .cons) {
+        if (! first) {
+            try std.fmt.format(writer.writer(), " ", .{});
+        } else {
+            try std.fmt.format(writer.writer(), "(", .{});
+        }
+        first = false;
+        try format_rec(get_car(current), allocator, writer);
+        current = get_cdr(current);
+    }
+    if (obj_type(current) == .nil) {
+        try std.fmt.format(writer.writer(), ")", .{});
+    } else {
+        try std.fmt.format(writer.writer(), " . ", .{});
+        try format_rec(current, allocator, writer);
+        try std.fmt.format(writer.writer(), ")", .{});
+    }
+}
+
+
+fn format_rec(obj: Obj, allocator: std.mem.Allocator, writer: *Writer) anyerror!void {
+    try switch (obj_type(obj)) {
+        .b_true => std.fmt.format(writer.writer(), "#t", .{}),
+        .b_false => std.fmt.format(writer.writer(), "#f", .{}),
+        .nil => std.fmt.format(writer.writer(), "()", .{}),
+        .symbol => format_symbol(obj, allocator, writer),
+        .number => std.fmt.format(writer.writer(), "{}", .{as_number(obj)}),
+        .b_opaque => std.fmt.format(writer.writer(), "#<opaque: {}>", .{get_opaque_value(obj)}),
+        .cons  => format_cons(obj, allocator, writer),
+    };
+}
+
+pub fn format(obj: Obj, allocator: std.mem.Allocator) ![] const u8 {
+    var writer = Writer.init(allocator);
+    defer Writer.deinit(writer);
+    try format_rec(obj, allocator, &writer);
+    return Writer.toOwnedSlice(&writer);
+}
+
+
+fn expectFormatEqual(expected: [] const u8, o: Obj) !void {
+    const allocator: std.mem.Allocator = std.testing.allocator;
+    const actual = try format(o, allocator);
+    defer allocator.free(actual);
+    try std.testing.expectEqualStrings(expected, actual);
+}
+
+test "format" {
+    const allocator: std.mem.Allocator = std.testing.allocator;
+    const pool = try create_obj_pool(allocator);
+    defer destroy_obj_pool(pool, allocator);
+    try expectFormatEqual("#t", try create_true(pool));
+    try expectFormatEqual("#f", try create_false(pool));
+    try expectFormatEqual("42", try create_number(pool, 42));
+    try expectFormatEqual("symbol", try create_symbol(pool, "symbol"));
+    try expectFormatEqual("()", try create_nil(pool));
+    try expectFormatEqual("(42 43)", try create_cons(pool,  try create_number(pool, 42), try create_cons(pool, try create_number(pool, 43), try create_nil(pool))));
+    try expectFormatEqual("(42 . 43)", try create_cons(pool,  try create_number(pool, 42), try create_number(pool, 43)));
 }

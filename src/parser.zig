@@ -103,12 +103,21 @@ pub fn parseString(s: [] const u8, pool: *object.ObjPool) !object.Obj {
     );
 }
 
+fn expectFormatEqual(expected: [] const u8, o: object.Obj) !void {
+    const allocator: std.mem.Allocator = std.testing.allocator;
+    const actual = object.format(o);
+    defer allocator.destroy(actual);
+    try std.testing.expectEqualStrings(expected, actual);
+}
+
 test "parse true & false" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool, allocator);
-    try std.testing.expectEqual(object.ObjType.b_true, object.obj_type(try parseString("#t", pool)));
-    try std.testing.expectEqual(object.ObjType.b_false, object.obj_type(try parseString("#f", pool)));
+    const v_true = try parseString("#t", pool);
+    try std.testing.expectEqual(object.ObjType.b_true, object.obj_type(v_true));
+    const v_false = try parseString("#f", pool);
+    try std.testing.expectEqual(object.ObjType.b_false, object.obj_type(v_false));
 }
 
 test "parse number" {
