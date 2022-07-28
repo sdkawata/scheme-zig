@@ -17,6 +17,10 @@ pub const Evaluator = struct {
 const BuildinFunc = enum(i32) {
     plus,
     equal,
+    nil_p,
+    car,
+    cdr,
+    minus,
 };
 
 fn push_buildin_func(pool: *object.ObjPool, env: object.Obj, name: [] const u8, f: BuildinFunc) !void {
@@ -32,13 +36,21 @@ pub fn create_evaluator(allocator: std.mem.Allocator) !*Evaluator {
     evaluator.globals = g;
     try push_buildin_func(pool, g, "+", .plus);
     try push_buildin_func(pool, g, "=", .equal);
+    try push_buildin_func(pool, g, "nil?", .nil_p);
+    try push_buildin_func(pool, g, "car", .car);
+    try push_buildin_func(pool, g, "cdr", .cdr);
+    try push_buildin_func(pool, g, "-", .minus);
     return evaluator;
 }
 
 fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)anyerror!object.Obj {
     return switch(f) {
         .plus => apply_plus,
-        .equal => apply_equal
+        .equal => apply_equal,
+        .nil_p => apply_nil_p,
+        .car => apply_car,
+        .cdr => apply_cdr,
+        .minus => apply_minus,
     };
 }
 
@@ -65,7 +77,7 @@ fn apply_plus(evaluator: *Evaluator, s: object.Obj, _: object.Obj) anyerror!obje
 }
 
 fn apply_equal(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
-    if ((try list_length(s)) < 2) {
+    if ((try list_length(s)) != 2) {
         std.debug.print("= expect 2 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
@@ -80,6 +92,62 @@ fn apply_equal(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj 
     } else {
         return object.create_false(e.pool);
     }
+}
+
+fn apply_minus(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
+    if ((try list_length(s)) != 2) {
+        std.debug.print("= expect 2 args but got {}\n", .{try list_length(s)});
+        return EvalError.IllegalParameter;
+    }
+    const left = object.get_car(s);
+    const right = object.get_car(object.get_cdr(s));
+    if (object.obj_type(left) != .number or object.obj_type(right) != .number) {
+        std.debug.print("must given number\n", .{});
+        return EvalError.IllegalParameter;
+    }
+    return object.create_number(
+        e.pool,
+        object.as_number(left) - object.as_number(right)
+    );
+}
+
+
+fn apply_nil_p(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
+    if ((try list_length(s)) != 1) {
+        std.debug.print("nil? expect 1 args but got {}\n", .{try list_length(s)});
+        return EvalError.IllegalParameter;
+    }
+    if (object.obj_type(object.get_car(s)) == .nil) {
+        return object.create_true(e.pool);
+    } else {
+        return object.create_false(e.pool);
+    }
+}
+
+fn apply_car(_: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
+    if ((try list_length(s)) != 1) {
+        std.debug.print("car expect 1 args but got {}\n", .{try list_length(s)});
+        return EvalError.IllegalParameter;
+    }
+    const car = object.get_car(s);
+    if (object.obj_type(car) != .cons) {
+        std.debug.print("car got non-list\n", .{});
+        return EvalError.IllegalParameter;
+    }
+    return object.get_car(car);
+}
+
+fn apply_cdr(_: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
+    if ((try list_length(s)) != 1) {
+        std.debug.print("cdr expect 1 args but got {}\n", .{try list_length(s)});
+        return EvalError.IllegalParameter;
+    }
+    const car = object.get_car(s);
+    if (object.obj_type(car) != .cons) {
+        std.debug.print("car got non-list\n", .{});
+        return EvalError.IllegalParameter;
+    }
+    return object.get_cdr(car);
 }
 
 fn eval_every_in_list(e: *Evaluator, s: object.Obj, env: object.Obj) anyerror!object.Obj {
@@ -145,7 +213,13 @@ fn eval_list(e: *Evaluator, s:object.Obj, env: object.Obj) anyerror!object.Obj {
     const cdr = object.get_cdr(s);
     if (object.obj_type(car) == .symbol) {
         const symbol_val = try object.as_symbol(e.pool, car);
-        if (std.mem.eql(u8, symbol_val, "define")) {
+        if (std.mem.eql(u8, symbol_val, "quote")) {
+            if ((try list_length(cdr)) != 1) {
+                std.debug.print("quote expect 1 args but got {}\n", .{try list_length(cdr)});
+                return EvalError.IllegalParameter;
+            }
+            return object.get_car(cdr);
+        } else if (std.mem.eql(u8, symbol_val, "define")) {
             if ((try list_length(cdr)) < 2) {
                 std.debug.print("define expect 2 args but got {}\n", .{try list_length(cdr)});
                 return EvalError.IllegalParameter;

@@ -48,7 +48,7 @@ fn parse_number(p: *Parser, pool: *object.ObjPool) !object.Obj {
 }
 
 fn parse_list(p: *Parser, pool: *object.ObjPool) anyerror!object.Obj {
-    if (p.s[p.p] == ')') {
+    if ((try peek(p, 0)) == ')') {
         p.p+=1;
         return object.create_nil(pool);
     } else {
