@@ -16,6 +16,7 @@ pub const Evaluator = struct {
 
 const OpaqueSymbol = enum(i32) {
     plus,
+    equal,
 };
 
 pub fn create_evaluator(allocator: std.mem.Allocator) !*Evaluator {
@@ -48,9 +49,30 @@ fn apply_plus(evaluator: *Evaluator, s: object.Obj, env: object.Obj) anyerror!ob
     return object.create_number(evaluator.pool, result);
 }
 
+fn apply_equal(e: *Evaluator, s: object.Obj, env: object.Obj) anyerror!object.Obj {
+    if ((try list_length(s)) < 2) {
+        std.debug.print("= expect 2 args but got {}\n", .{try list_length(s)});
+        return EvalError.IllegalParameter;
+    }
+    const left = object.get_car(s);
+    const evaled_left = try eval(e, left, env);
+    const right = object.get_car(object.get_cdr(s));
+    const evaled_right = try eval(e, right, env);
+    if (object.obj_type(evaled_left) != .number or object.obj_type(evaled_right) != .number) {
+        std.debug.print("must given number\n", .{});
+        return EvalError.IllegalParameter;
+    }
+    if (object.as_number(evaled_left) == object.as_number(evaled_right)) {
+        return object.create_true(e.pool);
+    } else {
+        return object.create_false(e.pool);
+    }
+}
+
 fn apply_opaque(e: *Evaluator, o: OpaqueSymbol, s: object.Obj, env: object.Obj)  anyerror!object.Obj {
     return switch(o) {
         .plus => apply_plus(e, s, env),
+        .equal => apply_equal(e, s, env),
     };
 }
 
@@ -137,6 +159,30 @@ fn eval_list(e: *Evaluator, s:object.Obj, env: object.Obj) anyerror!object.Obj {
             } else {
                 return eval(e, object.get_car(cddr), env);
             }
+        } else if (std.mem.eql(u8, symbol_val, "let")) {
+            const newframe = try object.create_frame(e.pool, try object.create_nil(e.pool), env);
+            const length = try list_length(cdr);
+            if (length != 2) {
+                std.debug.print("let expect 2 but got {}\n", .{try list_length(cdr)});
+                return EvalError.IllegalParameter;
+            }
+            const bindlist = object.get_car(cdr);
+            var current_binds = bindlist;
+            while (object.obj_type(current_binds) != .nil) {
+                const bind_pair = object.get_car(current_binds);
+                const bind_pair_length = try list_length(cdr);
+                if (bind_pair_length != 2) {
+                    std.debug.print("illegal let form\n", .{});
+                    return EvalError.IllegalParameter;
+                }
+                const symbol = object.get_car(bind_pair);
+                const body = object.get_car(object.get_cdr(bind_pair));
+                const evaled_body = try eval(e, body, env);
+                try object.push_frame_var(e.pool, newframe, symbol, evaled_body);
+                current_binds = object.get_cdr(current_binds);
+            }
+            const body = object.get_car(object.get_cdr(cdr));
+            return eval(e, body, newframe);
         }
     }
     const procedure = try eval(e, car, env);
@@ -151,6 +197,8 @@ fn lookup_symbol(e: *Evaluator, s: object.Obj, env: object.Obj) !object.Obj {
     const symbol = try object.as_symbol(e.pool, s);
     if (std.mem.eql(u8, symbol, "+")) {
         return object.create_opaque(e.pool, @enumToInt(OpaqueSymbol.plus));
+    } else if (std.mem.eql(u8, symbol, "=")) {
+        return object.create_opaque(e.pool, @enumToInt(OpaqueSymbol.equal));
     } else {
         return object.lookup_frame(env, s) catch |err| if (err == object.LookUpError.NotFound) {
             return EvalError.VariableNotFound;

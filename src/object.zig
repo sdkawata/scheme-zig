@@ -198,6 +198,7 @@ pub fn get_frame_previous(obj: Obj) Obj {
 
 pub fn push_frame_var(pool: *ObjPool, obj: Obj, key: Obj, value: Obj) !void {
     assert(!is_value(obj) and obj_ref_type(obj) == .frame);
+    assert(obj_type(key) == .symbol);
     const header = as_obj_header(obj);
     const frame = @ptrCast(*ObjFrame, header);
     frame.vars = try create_cons(pool, try create_cons(pool, key, value), frame.vars);
