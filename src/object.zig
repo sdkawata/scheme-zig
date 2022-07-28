@@ -19,20 +19,27 @@ pub const Obj = u64;
 // TYPE env frame value:none additional:vars pointer(8byte, list of pair of key and value) + previous frame (8btye)
 
 
-const ObjHeader = extern struct {
+const ObjHeader = packed struct {
     i: u64,
 };
 
-const ObjConsCell = extern struct {
+const ObjConsCell = packed struct {
     header: ObjHeader,
     car: Obj,
     cdr: Obj,
 };
 
-const ObjFrame = extern struct {
+const ObjFrame = packed struct {
     header: ObjHeader,
     vars: Obj,
     previous: Obj,
+};
+
+const ObjFunc = packed struct {
+    header: ObjHeader,
+    args: Obj,
+    body: Obj,
+    env: Obj,
 };
 
 const ObjValueType = enum(u16) {
@@ -46,6 +53,7 @@ const ObjValueType = enum(u16) {
 const ObjRefType = enum(u32) {
     cons,
     frame,
+    func,
 };
 
 pub const ObjType =  enum(u32) {
@@ -57,6 +65,7 @@ pub const ObjType =  enum(u32) {
     symbol,
     buildin,
     frame,
+    func,
 };
 
 const INITIAL_BUF_SIZE = 1000;
@@ -103,6 +112,7 @@ pub fn obj_type (obj:Obj) ObjType {
         return switch(obj_ref_type(obj)) {
             .cons => .cons,
             .frame => .frame,
+            .func => .func,
         };
     }
 }
@@ -146,6 +156,27 @@ pub fn get_cdr(obj: Obj) Obj {
     const header = as_obj_header(obj);
     const consCell = @ptrCast(*ObjConsCell, header);
     return consCell.cdr;
+}
+
+pub fn get_func_args(obj: Obj) Obj {
+    assert(!is_value(obj) and obj_ref_type(obj) == .func);
+    const header = as_obj_header(obj);
+    const func = @ptrCast(*ObjFunc, header);
+    return func.args;
+}
+
+pub fn get_func_body(obj: Obj) Obj {
+    assert(!is_value(obj) and obj_ref_type(obj) == .func);
+    const header = as_obj_header(obj);
+    const func = @ptrCast(*ObjFunc, header);
+    return func.body;
+}
+
+pub fn get_func_env(obj: Obj) Obj {
+    assert(!is_value(obj) and obj_ref_type(obj) == .func);
+    const header = as_obj_header(obj);
+    const func = @ptrCast(*ObjFunc, header);
+    return func.env;
 }
 
 pub fn get_frame_vars(obj: Obj) Obj {
@@ -283,6 +314,14 @@ pub fn create_frame(pool: *ObjPool, vars: Obj, previous: Obj) !Obj {
     return as_obj(@ptrCast(*ObjHeader, frame));
 }
 
+pub fn create_func(pool: *ObjPool, args: Obj, body: Obj, env: Obj) !Obj {
+    const func = try create(pool, ObjFunc);
+    try init_header(&func.header, ObjRefType.func, 0);
+    func.args = args;
+    func.body = body;
+    func.env = env;
+    return as_obj(@ptrCast(*ObjHeader, func));
+}
 
 const Writer = std.ArrayList(u8);
 
@@ -323,6 +362,7 @@ fn format_rec(pool: *ObjPool, obj: Obj, allocator: std.mem.Allocator, writer: *W
         .number => std.fmt.format(writer.writer(), "{}", .{as_number(obj)}),
         .buildin => std.fmt.format(writer.writer(), "#<buildin: {}>", .{get_buildin_value(obj)}),
         .frame => std.fmt.format(writer.writer(), "#<frame>", .{}),
+        .func => std.fmt.format(writer.writer(), "#<closure>", .{}),
         .cons  => format_cons(pool, obj, allocator, writer),
     };
 }
