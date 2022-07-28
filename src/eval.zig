@@ -148,6 +148,7 @@ fn eval(e: *Evaluator, s: object.Obj, env: object.Obj) !object.Obj {
         .nil => s,
         .buildin => s,
         .func => s,
+        .undef => s,
         .frame => EvalError.UnexpectedIntervalValue,
         .symbol => lookup_symbol(e, s, env),
         .cons => eval_list(e, s, env),

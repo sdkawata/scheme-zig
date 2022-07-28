@@ -49,6 +49,7 @@ const ObjValueType = enum(u16) {
     nil,
     buildin,
     symbol,
+    undef,
 };
 const ObjRefType = enum(u32) {
     cons,
@@ -59,6 +60,7 @@ const ObjRefType = enum(u32) {
 pub const ObjType =  enum(u32) {
     b_true,
     b_false,
+    undef,
     number,
     cons,
     nil,
@@ -103,6 +105,7 @@ pub fn obj_type (obj:Obj) ObjType {
         return switch(obj_value_type(obj)) {
             .b_true => .b_true,
             .b_false => .b_false,
+            .undef => .undef,
             .nil => .nil,
             .number_i32 => .number,
             .buildin => .buildin,
@@ -286,6 +289,10 @@ pub fn create_false(_: *ObjPool) !Obj {
     return create_value(ObjValueType.b_false, 0);
 }
 
+pub fn create_undef(_: *ObjPool) !Obj {
+    return create_value(ObjValueType.undef, 0);
+}
+
 pub fn create_number(_: *ObjPool, n: i32) !Obj {
     return create_value(ObjValueType.number_i32, n);
 }
@@ -323,6 +330,25 @@ pub fn create_func(pool: *ObjPool, args: Obj, body: Obj, env: Obj) !Obj {
     return as_obj(@ptrCast(*ObjHeader, func));
 }
 
+pub fn equal(obj1: Obj, obj2: Obj) bool {
+    const type1 = obj_type(obj1);
+    const type2 = obj_type(obj2);
+    if (type1 == .b_true and type2 == .b_true) {
+        return true;
+    } else if  (type1 == .b_false and type2 == .b_false) {
+        return true;
+    } else if (type1 == .symbol and type2 == .symbol) {
+        return get_symbol_id(obj1) == get_symbol_id(obj2);
+    } else if (type1 == .cons and type2 == .cons) {
+        return equal(get_car(obj1), get_car(obj2)) and equal(get_cdr(obj1), get_cdr(obj2));
+    } else if (type1 == .nil and type2 == .nil) {
+        return true;
+    } else if (type1 == .number and type2 == .number) {
+        return as_number(obj1) == as_number(obj2);
+    }
+    return false;
+}
+
 const Writer = std.ArrayList(u8);
 
 fn format_symbol(pool: *ObjPool, obj: Obj, _: std.mem.Allocator, writer: *Writer) !void {
@@ -357,6 +383,7 @@ fn format_rec(pool: *ObjPool, obj: Obj, allocator: std.mem.Allocator, writer: *W
     try switch (obj_type(obj)) {
         .b_true => std.fmt.format(writer.writer(), "#t", .{}),
         .b_false => std.fmt.format(writer.writer(), "#f", .{}),
+        .undef => std.fmt.format(writer.writer(), "#<undef>", .{}),
         .nil => std.fmt.format(writer.writer(), "()", .{}),
         .symbol => format_symbol(pool, obj, allocator, writer),
         .number => std.fmt.format(writer.writer(), "{}", .{as_number(obj)}),
