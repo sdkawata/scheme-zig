@@ -119,6 +119,24 @@ fn eval_list(e: *Evaluator, s:object.Obj, env: object.Obj) anyerror!object.Obj {
             const args = object.get_car(cdr);
             const body = object.get_car(object.get_cdr(cdr));
             return object.create_func(e.pool, args, body, env);
+        } else if (std.mem.eql(u8, symbol_val, "if")) {
+            const length = try list_length(cdr);
+            if (length != 2 and length != 3) {
+                std.debug.print("if expect 2 or 3 args but got {}\n", .{try list_length(cdr)});
+                return EvalError.IllegalParameter;
+            }
+            const cadr = object.get_car(cdr);
+            const cond = try eval(e, cadr, env);
+            const cddr = object.get_cdr(cdr);
+            if (object.obj_type(cond) == .b_false) {
+                if (length == 2) {
+                    return object.create_undef(e.pool);
+                } else {
+                    return eval(e, object.get_car(object.get_cdr(cddr)), env);
+                }
+            } else {
+                return eval(e, object.get_car(cddr), env);
+            }
         }
     }
     const procedure = try eval(e, car, env);

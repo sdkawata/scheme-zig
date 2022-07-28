@@ -31,7 +31,6 @@ test "execute small test" {
             std.debug.print("eval error while evaling: {s}\n", .{formatted});
             return err;
         };
-        std.debug.print("a\n", .{});
         if (! object.equal(expected, result)) {
             const formatted = try object.format(evaluator.pool, expr, allocator);
             defer allocator.free(formatted);
