@@ -14,16 +14,32 @@ pub const Evaluator = struct {
     globals: object.Obj,
 };
 
-const OpaqueSymbol = enum(i32) {
+const BuildinFunc = enum(i32) {
     plus,
     equal,
 };
 
+fn push_buildin_func(pool: *object.ObjPool, env: object.Obj, name: [] const u8, f: BuildinFunc) !void {
+    const symbol = try object.create_symbol(pool, name);
+    try object.push_frame_var(pool, env, symbol, try object.create_opaque(pool, @enumToInt(f)));
+}
+
 pub fn create_evaluator(allocator: std.mem.Allocator) !*Evaluator {
     const evaluator = try allocator.create(Evaluator);
-    evaluator.pool = try object.create_obj_pool(allocator);
-    evaluator.globals = try object.create_frame(evaluator.pool, try object.create_nil(evaluator.pool), try object.create_nil(evaluator.pool));
+    const pool = try object.create_obj_pool(allocator);
+    evaluator.pool = pool;
+    const g = try object.create_frame(evaluator.pool, try object.create_nil(evaluator.pool), try object.create_nil(evaluator.pool));
+    evaluator.globals = g;
+    try push_buildin_func(pool, g, "+", .plus);
+    try push_buildin_func(pool, g, "=", .equal);
     return evaluator;
+}
+
+fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)anyerror!object.Obj {
+    return switch(f) {
+        .plus => apply_plus,
+        .equal => apply_equal
+    };
 }
 
 pub fn destroy_evaluator(evaluator: *Evaluator, allocator: std.mem.Allocator) void {
@@ -31,16 +47,15 @@ pub fn destroy_evaluator(evaluator: *Evaluator, allocator: std.mem.Allocator) vo
     allocator.destroy(evaluator);
 }
 
-fn apply_plus(evaluator: *Evaluator, s: object.Obj, env: object.Obj) anyerror!object.Obj {
+fn apply_plus(evaluator: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     var result: i32 = 0;
     var current = s;
     while (object.obj_type(current) == .cons) {
         const car = object.get_car(current);
-        const car_result = try eval(evaluator, car, env);
-        if (object.obj_type(car_result) != .number) {
+        if (object.obj_type(car) != .number) {
             return EvalError.IllegalParameter;
         }
-        result += object.as_number(car_result);
+        result += object.as_number(car);
         current = object.get_cdr(current);
     }
     if (object.obj_type(current) != .nil) {
@@ -49,31 +64,41 @@ fn apply_plus(evaluator: *Evaluator, s: object.Obj, env: object.Obj) anyerror!ob
     return object.create_number(evaluator.pool, result);
 }
 
-fn apply_equal(e: *Evaluator, s: object.Obj, env: object.Obj) anyerror!object.Obj {
+fn apply_equal(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     if ((try list_length(s)) < 2) {
         std.debug.print("= expect 2 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
     const left = object.get_car(s);
-    const evaled_left = try eval(e, left, env);
     const right = object.get_car(object.get_cdr(s));
-    const evaled_right = try eval(e, right, env);
-    if (object.obj_type(evaled_left) != .number or object.obj_type(evaled_right) != .number) {
+    if (object.obj_type(left) != .number or object.obj_type(right) != .number) {
         std.debug.print("must given number\n", .{});
         return EvalError.IllegalParameter;
     }
-    if (object.as_number(evaled_left) == object.as_number(evaled_right)) {
+    if (object.as_number(left) == object.as_number(right)) {
         return object.create_true(e.pool);
     } else {
         return object.create_false(e.pool);
     }
 }
 
-fn apply_opaque(e: *Evaluator, o: OpaqueSymbol, s: object.Obj, env: object.Obj)  anyerror!object.Obj {
-    return switch(o) {
-        .plus => apply_plus(e, s, env),
-        .equal => apply_equal(e, s, env),
-    };
+fn eval_every_in_list(e: *Evaluator, s: object.Obj, env: object.Obj) anyerror!object.Obj {
+    if (object.obj_type(s) == .nil) {
+        return s;
+    }
+    if (object.obj_type(s) != .cons) {
+        std.debug.print("not list\n", .{});
+        return EvalError.IllegalParameter;
+    }
+    const evaled_car = try eval(e, object.get_car(s), env);
+    const evaled_cdr = try eval_every_in_list(e, object.get_cdr(s), env);
+    return object.create_cons(e.pool, evaled_car, evaled_cdr);
+}
+
+fn apply_buildin(e: *Evaluator, f: BuildinFunc, s: object.Obj, env: object.Obj)  anyerror!object.Obj {
+    const func = lookup_buildin_func(f);
+    const evaled_arg = try eval_every_in_list(e, s, env);
+    return func(e, evaled_arg, env);
 }
 
 fn list_length(s: object.Obj) anyerror!usize {
@@ -188,22 +213,15 @@ fn eval_list(e: *Evaluator, s:object.Obj, env: object.Obj) anyerror!object.Obj {
     const procedure = try eval(e, car, env);
     return switch(object.obj_type(procedure)) {
         .func => apply_func(e, procedure, cdr, env),
-        .buildin => apply_opaque(e, @intToEnum(OpaqueSymbol, object.get_buildin_value(procedure)), cdr, env),
+        .buildin => apply_buildin(e, @intToEnum(BuildinFunc, object.get_buildin_value(procedure)), cdr, env),
         else => EvalError.IllegalApplication,
     };
 }
 
-fn lookup_symbol(e: *Evaluator, s: object.Obj, env: object.Obj) !object.Obj {
-    const symbol = try object.as_symbol(e.pool, s);
-    if (std.mem.eql(u8, symbol, "+")) {
-        return object.create_opaque(e.pool, @enumToInt(OpaqueSymbol.plus));
-    } else if (std.mem.eql(u8, symbol, "=")) {
-        return object.create_opaque(e.pool, @enumToInt(OpaqueSymbol.equal));
-    } else {
-        return object.lookup_frame(env, s) catch |err| if (err == object.LookUpError.NotFound) {
-            return EvalError.VariableNotFound;
-        } else {return err;};
-    }
+fn lookup_symbol(_: *Evaluator, s: object.Obj, env: object.Obj) !object.Obj {
+    return object.lookup_frame(env, s) catch |err| if (err == object.LookUpError.NotFound) {
+        return EvalError.VariableNotFound;
+    } else {return err;};
 }
 
 fn eval(e: *Evaluator, s: object.Obj, env: object.Obj) !object.Obj {
