@@ -18,7 +18,8 @@ const OpCodeTag = enum(u32) {
     cons, // operand: no stack: CAR CDR -> CONS
     car, // operand: no stack: CONS -> CAR
     cdr, // operand: no stack: CONS -> CDR
-    // dup, // operand: no stack: VAL -> VAL VAL
+    dup_car, // operand: no stack: CONS -> CONS CAR
+    dup_cdr, // operand: no stack: CONS -> CONS CDR
     push_number, // operand: number stack: -> NUMBER
     push_true, //operand no stack: -> TRUE
     push_false, //operand no stack: -> FALSE
@@ -26,8 +27,10 @@ const OpCodeTag = enum(u32) {
     push_undef, //operand: no stack: -> UNDEF
     push_const, //operand: constno stack: -> VAL
     new_frame, //operand:no stack: -> FRAME
-    push_new_var, // operand: stmbol number stack: FRAME VAL -> FRAME
-    set_frame, // operand no stack: FRAME -> 
+    push_new_var, // operand: symbol number stack: FRAME VAL -> FRAME
+    push_new_var_current, // operand: symbol number stack: VAL ->
+    set_frame, // operand no stack: FRAME ->
+    closure, // operand: compiled_func_id stack: -> CLOSURE
 };
 
 const OpCode = packed struct {
@@ -44,6 +47,7 @@ const FuncFrame = struct {
     ret_func: usize,
     ret_addr: usize,
     base_stack_pointer: usize, // stack pointer when enter this function
+    base_env: object.Obj,
 };
 
 pub const Evaluator = struct {
@@ -115,7 +119,11 @@ fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)any
     };
 }
 
-fn apply_plus(evaluator: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
+fn peek_stack_top(e: *Evaluator) object.Obj {
+    return e.stack_frames.items[e.stack_frames.items.len - 1];
+}
+
+fn apply_plus(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     var result: i32 = 0;
     var current = s;
     while (object.obj_type(current) == .cons) {
@@ -129,7 +137,7 @@ fn apply_plus(evaluator: *Evaluator, s: object.Obj, _: object.Obj) anyerror!obje
     if (object.obj_type(current) != .nil) {
         return EvalError.IllegalParameter;
     }
-    return object.create_number(evaluator.pool, result);
+    return object.create_number(e.pool, result);
 }
 
 fn apply_equal(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
@@ -230,15 +238,30 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                         const ret = try buildin_func(e, args, e.current_env);
                         try std.ArrayList(object.Obj).append(&e.stack_frames, ret);
                     },
+                    .func => {
+                        try std.ArrayList(FuncFrame).append(&e.func_frames, FuncFrame {
+                            .ret_func = e.current_func,
+                            .ret_addr = e.program_pointer,
+                            .base_stack_pointer = e.stack_frames.items.len,
+                            .base_env = e.current_env,
+                        });
+                        const function_id = @intCast(usize, object.get_func_id(func));
+                        e.current_env = object.get_func_env(func);
+                        e.current_func = function_id;
+                        e.program_pointer = 0;
+                        try std.ArrayList(object.Obj).append(&e.stack_frames, args);
+                        continue;
+                    },
                     else => return EvalError.IllegalApplication,
                 }
             },
             .lookup => {
+                const val = object.lookup_frame(e.current_env, @intCast(usize, current_opcode.operand)) catch |err| if (err == object.LookUpError.NotFound) {
+                   return EvalError.VariableNotFound;
+                } else {return err;};
                 try std.ArrayList(object.Obj).append(
                     &e.stack_frames,
-                    object.lookup_frame(e.current_env, @intCast(usize, current_opcode.operand)) catch |err| if (err == object.LookUpError.NotFound) {
-                        return EvalError.VariableNotFound;
-                    } else {return err;}
+                    val
                 );
             },
             .define => {
@@ -260,6 +283,16 @@ fn eval_loop(e: *Evaluator) !object.Obj {
             },
             .cdr => {
                 const cons = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const cdr = object.get_cdr(cons);
+                try std.ArrayList(object.Obj).append(&e.stack_frames, cdr);
+            },
+            .dup_car => {
+                const cons = peek_stack_top(e);
+                const car = object.get_car(cons);
+                try std.ArrayList(object.Obj).append(&e.stack_frames, car);
+            },
+            .dup_cdr => {
+                const cons = peek_stack_top(e);
                 const cdr = object.get_cdr(cons);
                 try std.ArrayList(object.Obj).append(&e.stack_frames, cdr);
             },
@@ -287,21 +320,37 @@ fn eval_loop(e: *Evaluator) !object.Obj {
             },
             .push_new_var => {
                 const val = std.ArrayList(object.Obj).pop(&e.stack_frames);
-                const frame = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const frame = peek_stack_top(e);
                 const key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
                 try object.push_frame_var(e.pool, frame, key, val);
-                try std.ArrayList(object.Obj).append(&e.stack_frames, frame);
+            },
+            .push_new_var_current => {
+                const val = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
+                try object.push_frame_var(e.pool, e.current_env, key, val);
             },
             .set_frame => {
                 const frame = std.ArrayList(object.Obj).pop(&e.stack_frames);
                 std.debug.assert(object.obj_type(frame) == .frame);
                 e.current_env = frame;
             },
+            .closure => {
+                const function_id = @intCast(usize, current_opcode.operand);
+                const func = try object.create_func(e.pool, function_id, e.current_env);
+                try std.ArrayList(object.Obj).append(&e.stack_frames, func);
+            },
             .ret => {
-                // TODO: handle when has stack frame
                 const retval = std.ArrayList(object.Obj).pop(&e.stack_frames);
-                return retval;
-            }
+                if (e.func_frames.items.len == 0) {
+                    return retval;
+                }
+                const prev_func_frame = std.ArrayList(FuncFrame).pop(&e.func_frames);
+                e.program_pointer = prev_func_frame.ret_addr;
+                e.current_func = prev_func_frame.ret_func;
+                try std.ArrayList(object.Obj).resize(&e.stack_frames, prev_func_frame.base_stack_pointer);
+                e.current_env = prev_func_frame.base_env;
+                try std.ArrayList(object.Obj).append(&e.stack_frames, retval);
+            },
         }
         e.program_pointer+=1;
     }
@@ -348,14 +397,15 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
             try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_undef});
             return;
         } else if (std.mem.eql(u8, symbol_val, "lambda")) {
-            unreachable;
-            // if ((try list_length(cdr)) < 2) {
-            //     std.debug.print("lambda expect 2 args but got {}\n", .{try list_length(cdr)});
-            //     return EvalError.IllegalParameter;
-            // }
-            // const args = object.get_car(cdr);
-            // const body = object.get_car(object.get_cdr(cdr));
-            // return object.create_func(e.pool, args, body, env);
+            if ((try list_length(cdr)) < 2) {
+                std.debug.print("lambda expect 2 args but got {}\n", .{try list_length(cdr)});
+                return EvalError.IllegalParameter;
+            }
+            const args = object.get_car(cdr);
+            const body = object.get_car(object.get_cdr(cdr));
+            const func_id = try emit_func(e, body, args);
+            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .closure, .operand = @intCast(i32, func_id)});
+            return;
         } else if (std.mem.eql(u8, symbol_val, "if")) {
             unreachable;
             // const length = try list_length(cdr);
@@ -430,11 +480,45 @@ fn emit(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts: *st
     };
 }
 
-pub fn emit_func(e: *Evaluator, s: object.Obj) !usize {
+fn debug_print_func(e: *Evaluator, func_id: usize) void {
+    std.debug.print("==function {}==\n", .{func_id});
+    const func = e.compiled_funcs.items[func_id];
+    for (func.codes) |code, i| {
+        std.debug.print("p={} {}\n", .{i, code});
+    }
+    std.debug.print("==end function {}==\n", .{func_id});
+}
+
+pub fn emit_func(e: *Evaluator, s: object.Obj, args: object.Obj) !usize {
     var codes = std.ArrayList(OpCode).init(e.allocator);
     defer std.ArrayList(OpCode).deinit(codes);
     var consts = std.ArrayList(object.Obj).init(e.allocator);
     defer std.ArrayList(object.Obj).deinit(consts);
+
+    if (object.obj_type(args) != .nil) {
+        var current_args = args;
+        while (true) {
+            if (object.obj_type(current_args) != .cons) {
+                std.debug.print("illegal func arg param\n", .{});
+                return EvalError.IllegalParameter;
+            }
+            const symbol = object.get_car(current_args);
+            const symbol_id = object.get_symbol_id(symbol);
+            const cdr = object.get_cdr(current_args);
+            if (object.obj_type(cdr) != .nil) {
+                try std.ArrayList(OpCode).append(&codes, OpCode{.tag = .dup_car});
+                try std.ArrayList(OpCode).append(&codes, OpCode{.tag = .push_new_var_current, .operand=@intCast(i32, symbol_id)});
+                try std.ArrayList(OpCode).append(&codes, OpCode{.tag = .cdr});
+                current_args = cdr;
+                continue;
+            } else {
+                try std.ArrayList(OpCode).append(&codes, OpCode{.tag = .car});
+                try std.ArrayList(OpCode).append(&codes, OpCode{.tag = .push_new_var_current, .operand=@intCast(i32, symbol_id)});
+                break;
+            }
+        }
+    }
+
     try emit(e, s, &codes, &consts);
     try std.ArrayList(OpCode).append(&codes, OpCode{.tag = .ret});
     const idx = e.compiled_funcs.items.len;
@@ -442,6 +526,7 @@ pub fn emit_func(e: *Evaluator, s: object.Obj) !usize {
         .codes = std.ArrayList(OpCode).toOwnedSlice(&codes),
         .consts = std.ArrayList(object.Obj).toOwnedSlice(&consts),
     });
+    // debug_print_func(e, idx);
     return idx;
 }
 
@@ -455,6 +540,6 @@ pub fn eval_compiled_global(e: *Evaluator, func_no: usize) !object.Obj {
 }
 
 pub fn eval_global(e: *Evaluator, s: object.Obj) !object.Obj {
-    const idx = try emit_func(e, s);
+    const idx = try emit_func(e, s, try object.create_nil(e.pool));
     return eval_compiled_global(e, idx);
 }

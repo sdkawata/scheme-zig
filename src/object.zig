@@ -17,6 +17,7 @@ pub const Obj = u64;
 // |<- obj value(32bit) -> |<- obj tag(32 bit) -> |<- additional (any byte) >|
 // TYPE cons cell value:none additional:CAR pointer(8byte) + CDR pointer(8byte)
 // TYPE env frame value:none additional:vars pointer(8byte, list of pair of key and value) + previous frame (8btye)
+// TYPE env frame value:none additional:func id(8byte) + env (8btye)
 
 
 const ObjHeader = packed struct {
@@ -37,8 +38,7 @@ const ObjFrame = packed struct {
 
 const ObjFunc = packed struct {
     header: ObjHeader,
-    args: Obj,
-    body: Obj,
+    func_id: usize,
     env: Obj,
 };
 
@@ -161,18 +161,11 @@ pub fn get_cdr(obj: Obj) Obj {
     return consCell.cdr;
 }
 
-pub fn get_func_args(obj: Obj) Obj {
+pub fn get_func_id(obj: Obj) Obj {
     assert(!is_value(obj) and obj_ref_type(obj) == .func);
     const header = as_obj_header(obj);
     const func = @ptrCast(*ObjFunc, header);
-    return func.args;
-}
-
-pub fn get_func_body(obj: Obj) Obj {
-    assert(!is_value(obj) and obj_ref_type(obj) == .func);
-    const header = as_obj_header(obj);
-    const func = @ptrCast(*ObjFunc, header);
-    return func.body;
+    return func.func_id;
 }
 
 pub fn get_func_env(obj: Obj) Obj {
@@ -324,11 +317,10 @@ pub fn create_frame(pool: *ObjPool, vars: Obj, previous: Obj) !Obj {
     return as_obj(@ptrCast(*ObjHeader, frame));
 }
 
-pub fn create_func(pool: *ObjPool, args: Obj, body: Obj, env: Obj) !Obj {
+pub fn create_func(pool: *ObjPool, func_id: usize, env: Obj) !Obj {
     const func = try create(pool, ObjFunc);
     try init_header(&func.header, ObjRefType.func, 0);
-    func.args = args;
-    func.body = body;
+    func.func_id = func_id;
     func.env = env;
     return as_obj(@ptrCast(*ObjHeader, func));
 }
@@ -404,6 +396,16 @@ pub fn format(pool: *ObjPool, obj: Obj, allocator: std.mem.Allocator) ![] const 
     return Writer.toOwnedSlice(&writer);
 }
 
+pub fn debug_println_obj(pool: *ObjPool, obj: Obj) void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    const formatted = format(pool, obj, allocator) catch {
+        std.debug.print("!!format error!!\n", .{});
+        return;
+    };
+    // defer allocator.free(formatted);
+    std.debug.print("{s}\n", .{formatted});
+}
 
 pub fn expectFormatEqual(pool: *ObjPool, expected: [] const u8, o: Obj) !void {
     const allocator: std.mem.Allocator = std.testing.allocator;

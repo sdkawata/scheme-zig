@@ -11,6 +11,6 @@
     ((- (- 3 1) 1) 1)
     ((car (quote (2 3))) 2)
     ((cdr (quote (2 3))) (3))
-    ; (((lambda (x y) (+ x y)) 1 2) 3)
-    ; ((let ((f (lambda (x) (lambda (y) (+ x y))))) (f 1 2)) 3)
+    (((lambda (x y) (+ x y)) 1 2) 3)
+    ; ((let ((f (lambda (x) (lambda (y) (+ x y))))) ((f 1) 2)) 3)
 )
