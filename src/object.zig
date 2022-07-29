@@ -78,6 +78,7 @@ pub const ObjPool = struct {
     end: [*] u8,
     symbol_table: std.ArrayList([] const u8),
     allocator: std.mem.Allocator,
+    stack_frames: std.ArrayList(Obj),
 };
 
 fn is_value (obj:Obj) bool {
@@ -223,6 +224,7 @@ pub fn create_obj_pool(allocator: std.mem.Allocator) !*ObjPool {
     pool.current = @ptrCast([*] u8, &pool.buf[0]);
     pool.end = pool.current + INITIAL_BUF_SIZE;
     pool.symbol_table = std.ArrayList([] const u8).init(allocator);
+    pool.stack_frames = std.ArrayList(Obj).init(allocator);
     pool.allocator = allocator;
     return pool;
 }
@@ -233,6 +235,7 @@ pub fn destroy_obj_pool(pool: *ObjPool) void {
         pool.allocator.free(sym);
     }
     std.ArrayList([] const u8).deinit(pool.symbol_table);
+    std.ArrayList(Obj).deinit(pool.stack_frames);
     pool.allocator.destroy(pool);
 }
 
