@@ -31,6 +31,8 @@ const OpCodeTag = enum(u32) {
     push_new_var_current, // operand: symbol number stack: VAL ->
     set_frame, // operand no stack: FRAME ->
     closure, // operand: compiled_func_id stack: -> CLOSURE
+    jmp, // operand: addr stack: none
+    jmp_if_false, // operand: addr stack: VAL ->
 };
 
 const OpCode = packed struct {
@@ -351,6 +353,19 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 e.current_env = prev_func_frame.base_env;
                 try std.ArrayList(object.Obj).append(&e.stack_frames, retval);
             },
+            .jmp => {
+                const ptr = @intCast(usize, current_opcode.operand);
+                e.program_pointer = ptr;
+                continue;
+            },
+            .jmp_if_false => {
+                const ptr = @intCast(usize, current_opcode.operand);
+                const val = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                if (object.obj_type(val) == .b_false) {
+                    e.program_pointer = ptr;
+                    continue;
+                }
+            }
         }
         e.program_pointer+=1;
     }
@@ -407,24 +422,33 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
             try std.ArrayList(OpCode).append(codes, OpCode{.tag = .closure, .operand = @intCast(i32, func_id)});
             return;
         } else if (std.mem.eql(u8, symbol_val, "if")) {
-            unreachable;
-            // const length = try list_length(cdr);
-            // if (length != 2 and length != 3) {
-            //     std.debug.print("if expect 2 or 3 args but got {}\n", .{try list_length(cdr)});
-            //     return EvalError.IllegalParameter;
-            // }
-            // const cadr = object.get_car(cdr);
-            // const cond = try eval(e, cadr, env);
-            // const cddr = object.get_cdr(cdr);
-            // if (object.obj_type(cond) == .b_false) {
-            //     if (length == 2) {
-            //         return object.create_undef(e.pool);
-            //     } else {
-            //         return eval(e, object.get_car(object.get_cdr(cddr)), env);
-            //     }
-            // } else {
-            //     return eval(e, object.get_car(cddr), env);
-            // }
+            const length = try list_length(cdr);
+            if (length != 2 and length != 3) {
+                std.debug.print("malformed if expect 2 or 3 args but got {}\n", .{try list_length(cdr)});
+                return EvalError.IllegalParameter;
+            }
+            const cond = object.get_car(cdr);
+            try emit(e, cond, codes, consts);
+            const first_jmp = codes.items.len;
+            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .jmp_if_false, .operand = 0});
+
+            // true branch
+            const cddr = object.get_cdr(cdr);
+            try emit(e, object.get_car(cddr), codes, consts);
+            const true_branch_jp = codes.items.len;
+            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .jmp, .operand = 0});
+            codes.items[first_jmp].operand = @intCast(i32, codes.items.len);
+
+            //false branch
+            if (length == 2) {
+                try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_undef});
+            } else {
+                const cadddr = object.get_car(object.get_cdr(cddr));
+                try emit(e, cadddr, codes, consts);
+            }
+
+            codes.items[true_branch_jp].operand = @intCast(i32, codes.items.len);
+            return;
         } else if (std.mem.eql(u8, symbol_val, "let")) {
             const length = try list_length(cdr);
             if (length != 2) {
