@@ -3,7 +3,7 @@
     ((+ (+ 8 13) 9 (+ 2 10)) 42)
     ; ((if #t (+ 1 2) (no_such_symbol)) 3)
     ; ((if #f (no_such_symbol) (+ 2 2)) 4)
-    ; ((let ((x (+2 2))) (let ((x x)) x)) 4)
+    ((let ((x (+2 2))) (let ((x x)) x)) 4)
     ((= 3 4) #f)
     ((= 4 4) #t)
     ((nil? (quote ())) #t)

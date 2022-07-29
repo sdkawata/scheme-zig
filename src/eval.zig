@@ -25,6 +25,9 @@ const OpCodeTag = enum(u32) {
     push_nil, //operand no stack: -> NIL
     push_undef, //operand: no stack: -> UNDEF
     push_const, //operand: constno stack: -> VAL
+    new_frame, //operand:no stack: -> FRAME
+    push_new_var, // operand: stmbol number stack: FRAME VAL -> FRAME
+    set_frame, // operand no stack: FRAME -> 
 };
 
 const OpCode = packed struct {
@@ -278,6 +281,22 @@ fn eval_loop(e: *Evaluator) !object.Obj {
             .push_const => {
                 try std.ArrayList(object.Obj).append(&e.stack_frames, e.compiled_funcs.items[e.current_func].consts[@intCast(usize, current_opcode.operand)]);
             },
+            .new_frame => {
+                const new_frame = try object.create_frame(e.pool, try object.create_nil(e.pool), e.current_env);
+                try std.ArrayList(object.Obj).append(&e.stack_frames, new_frame);
+            },
+            .push_new_var => {
+                const val = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const frame = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
+                try object.push_frame_var(e.pool, frame, key, val);
+                try std.ArrayList(object.Obj).append(&e.stack_frames, frame);
+            },
+            .set_frame => {
+                const frame = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                std.debug.assert(object.obj_type(frame) == .frame);
+                e.current_env = frame;
+            },
             .ret => {
                 // TODO: handle when has stack frame
                 const retval = std.ArrayList(object.Obj).pop(&e.stack_frames);
@@ -357,30 +376,34 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
             //     return eval(e, object.get_car(cddr), env);
             // }
         } else if (std.mem.eql(u8, symbol_val, "let")) {
-            unreachable;
-            // const newframe = try object.create_frame(e.pool, try object.create_nil(e.pool), env);
-            // const length = try list_length(cdr);
-            // if (length != 2) {
-            //     std.debug.print("let expect 2 but got {}\n", .{try list_length(cdr)});
-            //     return EvalError.IllegalParameter;
-            // }
-            // const bindlist = object.get_car(cdr);
-            // var current_binds = bindlist;
-            // while (object.obj_type(current_binds) != .nil) {
-            //     const bind_pair = object.get_car(current_binds);
-            //     const bind_pair_length = try list_length(cdr);
-            //     if (bind_pair_length != 2) {
-            //         std.debug.print("illegal let form\n", .{});
-            //         return EvalError.IllegalParameter;
-            //     }
-            //     const symbol = object.get_car(bind_pair);
-            //     const body = object.get_car(object.get_cdr(bind_pair));
-            //     const evaled_body = try eval(e, body, env);
-            //     try object.push_frame_var(e.pool, newframe, symbol, evaled_body);
-            //     current_binds = object.get_cdr(current_binds);
-            // }
-            // const body = object.get_car(object.get_cdr(cdr));
-            // return eval(e, body, newframe);
+            const length = try list_length(cdr);
+            if (length != 2) {
+                std.debug.print("let expect 2 but got {}\n", .{try list_length(cdr)});
+                return EvalError.IllegalParameter;
+            }
+
+            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .new_frame});
+
+            const bindlist = object.get_car(cdr);
+            var current_binds = bindlist;
+            while (object.obj_type(current_binds) != .nil) {
+                const bind_pair = object.get_car(current_binds);
+                const bind_pair_length = try list_length(cdr);
+                if (bind_pair_length != 2) {
+                    std.debug.print("illegal let form\n", .{});
+                    return EvalError.IllegalParameter;
+                }
+                const symbol = object.get_car(bind_pair);
+                const body = object.get_car(object.get_cdr(bind_pair));
+                try emit(e, body, codes, consts);
+                const symbol_id = object.get_symbol_id(symbol);
+                try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_new_var, .operand=@intCast(i32, symbol_id)});
+                current_binds = object.get_cdr(current_binds);
+            }
+            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .set_frame});
+            const body = object.get_car(object.get_cdr(cdr));
+            try emit(e, body, codes, consts);
+            return;
         }
     }
     try emit(e, car, codes, consts);
