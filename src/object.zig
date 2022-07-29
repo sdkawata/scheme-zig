@@ -70,7 +70,7 @@ pub const ObjType =  enum(u32) {
     func,
 };
 
-const INITIAL_BUF_SIZE = 10000;
+const INITIAL_BUF_SIZE = 100000;
 
 pub const ObjPool = struct {
     buf: [] u8,

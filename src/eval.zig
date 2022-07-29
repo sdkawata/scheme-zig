@@ -7,6 +7,7 @@ const EvalError  = error {
     IllegalParameter,
     UnexpectedIntervalValue,
     InternalError,
+    MaxRecursiveCallExceeds,
 };
 
 // <- stack bottom stack top ->
@@ -71,7 +72,10 @@ const BuildinFunc = enum(i32) {
     car,
     cdr,
     minus,
+    cons,
 };
+
+const MAX_RECURSIVE_CALL = 100;
 
 fn push_buildin_func(pool: *object.ObjPool, env: object.Obj, name: [] const u8, f: BuildinFunc) !void {
     const symbol = try object.create_symbol(pool, name);
@@ -90,6 +94,7 @@ pub fn create_evaluator(allocator: std.mem.Allocator) !*Evaluator {
     try push_buildin_func(pool, g, "car", .car);
     try push_buildin_func(pool, g, "cdr", .cdr);
     try push_buildin_func(pool, g, "-", .minus);
+    try push_buildin_func(pool, g, "cons", .cons);
     evaluator.allocator = allocator;
     evaluator.compiled_funcs = std.ArrayList(CompiledFunc).init(allocator);
     evaluator.func_frames = std.ArrayList(FuncFrame).init(allocator);
@@ -118,6 +123,7 @@ fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)any
         .car => apply_car,
         .cdr => apply_cdr,
         .minus => apply_minus,
+        .cons => apply_cons,
     };
 }
 
@@ -216,6 +222,16 @@ fn apply_cdr(_: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     return object.get_cdr(car);
 }
 
+fn apply_cons(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
+    if ((try list_length(s)) != 2) {
+        std.debug.print("cons expect 2 args but got {}\n", .{try list_length(s)});
+        return EvalError.IllegalParameter;
+    }
+    const car = object.get_car(s);
+    const cadr = object.get_car(object.get_cdr(s));
+    return object.create_cons(e.pool, car, cadr);
+}
+
 fn list_length(s: object.Obj) anyerror!usize {
     if (object.obj_type(s) == .nil) {
         return @intCast(usize, 0);
@@ -232,6 +248,9 @@ fn eval_loop(e: *Evaluator) !object.Obj {
         // std.debug.print("fun={} pp={} opcode={}\n", .{e.current_func, e.program_pointer, current_opcode});
         switch (current_opcode.tag) {
             .call => {
+                if (e.func_frames.items.len > MAX_RECURSIVE_CALL) {
+                    return EvalError.MaxRecursiveCallExceeds;
+                }
                 const args = std.ArrayList(object.Obj).pop(&e.stack_frames);
                 const func = std.ArrayList(object.Obj).pop(&e.stack_frames);
                 switch (object.obj_type(func)) {
@@ -480,7 +499,6 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
             return;
         } else if (std.mem.eql(u8, symbol_val, "letrec")) {
             const length = try list_length(cdr);
-            object.debug_println_obj(e.pool, cdr);
             if (length != 2) {
                 std.debug.print("letrec expect 2 but got {}\n", .{try list_length(cdr)});
                 return EvalError.IllegalParameter;
