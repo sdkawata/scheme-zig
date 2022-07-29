@@ -494,7 +494,9 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
             const cddr = object.get_cdr(cdr);
             try emit(e, object.get_car(cddr), codes, consts, tail);
             const true_branch_jp = codes.items.len;
-            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .jmp, .operand = 0});
+            if (!tail) {
+                try std.ArrayList(OpCode).append(codes, OpCode{.tag = .jmp, .operand = 0});
+            }
             codes.items[first_jmp].operand = @intCast(i32, codes.items.len);
 
             //false branch
@@ -506,7 +508,9 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
                 try emit(e, cadddr, codes, consts, tail);
             }
 
-            codes.items[true_branch_jp].operand = @intCast(i32, codes.items.len);
+            if (!tail) {
+                codes.items[true_branch_jp].operand = @intCast(i32, codes.items.len);
+            }
             return;
         } else if (std.mem.eql(u8, symbol_val, "let")) {
             const length = try list_length(cdr);
