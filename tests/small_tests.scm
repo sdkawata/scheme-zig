@@ -22,6 +22,6 @@
             sum
             (lambda (x) (if (null? x) 0 (+ (car x) (sum (cdr x)))))
             ))
-        (sum (quote (1 2 3 4 5))))
-            15)
+        (sum (quote (1 2 3))))
+            6)
 )
