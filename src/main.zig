@@ -1,6 +1,7 @@
 const std = @import("std");
 const parser = @import("parser.zig");
 const eval = @import("eval.zig");
+const emit = @import("emit.zig");
 const object = @import("object.zig");
 
 pub fn main() anyerror!void {
@@ -43,7 +44,8 @@ test "execute test scm files" {
         var p = parser.Parser{.s = content, .p = 0};
         var evaled = while(true) {
             const obj = try parser.parse(&p, evaluator.pool);
-            const evaled = try eval.eval_global(evaluator, obj);
+            const emitted_idx = try emit.emit_func(evaluator, obj, try object.create_nil(evaluator.pool));
+            const evaled = try eval.eval_compiled_global(evaluator, emitted_idx);
             try parser.skip_whitespaces(&p);
             if (! parser.is_char_left(&p)) {
                 break evaled;

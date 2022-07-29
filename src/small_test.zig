@@ -1,6 +1,7 @@
 const std = @import("std");
 const parser = @import("parser.zig");
 const eval = @import("eval.zig");
+const emit = @import("emit.zig");
 const object = @import("object.zig");
 
 const TestError = error {
@@ -35,10 +36,14 @@ test "execute small test" {
 
         // std.debug.print("evaling {s}\n", .{expr_str});
 
-        const result = eval.eval_global(evaluator, expr) catch |err| {
-            const formatted = try object.format(evaluator.pool, expr, allocator);
-            defer allocator.free(formatted);
-            std.debug.print("eval error while evaling: {s}\n", .{formatted});
+        const emitted_idx = emit.emit_func(evaluator, expr, try object.create_nil(evaluator.pool)) catch |err| {
+            std.debug.print("emit error while emiting:", .{});
+            object.debug_println_obj(evaluator.pool, expr);
+            return err;
+        };
+        const result = eval.eval_compiled_global(evaluator, emitted_idx) catch |err| {
+            std.debug.print("eval error while evaling: ", .{});
+            object.debug_println_obj(evaluator.pool, expr);
             return err;
         };
         if (! object.equal(expected, result)) {
