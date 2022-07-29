@@ -24,6 +24,7 @@ const OpCodeTag = enum(u32) {
     push_false, //operand no stack: -> FALSE
     push_nil, //operand no stack: -> NIL
     push_undef, //operand: no stack: -> UNDEF
+    push_const, //operand: constno stack: -> VAL
 };
 
 const OpCode = packed struct {
@@ -215,7 +216,7 @@ fn list_length(s: object.Obj) anyerror!usize {
 fn eval_loop(e: *Evaluator) !object.Obj {
     while(true) {
         const current_opcode = e.compiled_funcs.items[e.current_func].codes[e.program_pointer];
-        //std.debug.print("fun={} pp={} opcode={}\n", .{e.current_func, e.program_pointer, current_opcode});
+        // std.debug.print("fun={} pp={} opcode={}\n", .{e.current_func, e.program_pointer, current_opcode});
         switch (current_opcode.tag) {
             .call => {
                 const args = std.ArrayList(object.Obj).pop(&e.stack_frames);
@@ -274,6 +275,9 @@ fn eval_loop(e: *Evaluator) !object.Obj {
             .push_undef => {
                 try std.ArrayList(object.Obj).append(&e.stack_frames, try object.create_undef(e.pool));
             },
+            .push_const => {
+                try std.ArrayList(object.Obj).append(&e.stack_frames, e.compiled_funcs.items[e.current_func].consts[@intCast(usize, current_opcode.operand)]);
+            },
             .ret => {
                 // TODO: handle when has stack frame
                 const retval = std.ArrayList(object.Obj).pop(&e.stack_frames);
@@ -306,7 +310,9 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
                 std.debug.print("malformed quote: expect 1 args but got {}\n", .{try list_length(cdr)});
                 return EvalError.IllegalParameter;
             }
+            const idx = consts.items.len;
             try std.ArrayList(object.Obj).append(consts, object.get_car(cdr));
+            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_const, .operand = @intCast(i32, idx)});
             return;
         } else if (std.mem.eql(u8, symbol_val, "define")) {
             if ((try list_length(cdr)) < 2) {
