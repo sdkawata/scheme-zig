@@ -33,6 +33,8 @@ test "execute small test" {
         const expr = try parser.parse_string(expr_str, evaluator.pool);
         const expected = try parser.parse_string(expected_str, evaluator.pool);
 
+        // std.debug.print("evaling {s}\n", .{expr_str});
+
         const result = eval.eval_global(evaluator, expr) catch |err| {
             const formatted = try object.format(evaluator.pool, expr, allocator);
             defer allocator.free(formatted);

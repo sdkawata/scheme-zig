@@ -50,7 +50,6 @@ const FuncFrame = struct {
     ret_func: usize,
     ret_addr: usize,
     base_stack_pointer: usize, // stack pointer when enter this function
-    base_env: object.Obj,
 };
 
 pub const Evaluator = struct {
@@ -86,6 +85,7 @@ pub fn create_evaluator(allocator: std.mem.Allocator) !*Evaluator {
     const pool = try object.create_obj_pool(allocator);
     evaluator.pool = pool;
     const g = try object.create_frame(evaluator.pool, try object.create_nil(evaluator.pool), try object.create_nil(evaluator.pool));
+    try std.ArrayList(object.Obj).append(&evaluator.pool.consts, g);
     evaluator.globals = g;
     try push_buildin_func(pool, g, "+", .plus);
     try push_buildin_func(pool, g, "=", .equal);
@@ -109,6 +109,10 @@ pub fn destroy_evaluator(e: *Evaluator) void {
     std.ArrayList(FuncFrame).deinit(e.func_frames);
     const allocator = e.allocator;
     allocator.destroy(e);
+}
+
+fn globals(e: *Evaluator) object.Obj {
+    return e.pool.consts.items[0];
 }
 
 fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)anyerror!object.Obj {
@@ -249,8 +253,15 @@ fn ret_to_previous_func(e: *Evaluator, retval: object.Obj) !void {
     e.program_pointer = prev_func_frame.ret_addr;
     e.current_func = prev_func_frame.ret_func;
     try std.ArrayList(object.Obj).resize(&e.pool.stack_frames, prev_func_frame.base_stack_pointer);
-    e.current_env = prev_func_frame.base_env;
+    e.current_env = pop_stack(e);
     try push_stack(e, retval);
+}
+
+fn jmp_to_func(e: *Evaluator, func: object.Obj, args: object.Obj) !void {
+    e.current_env = object.get_func_env(func);  
+    e.current_func = @intCast(usize, object.get_func_id(func));
+    e.program_pointer = 0;
+    try push_stack(e, args);
 }
 
 fn pop_stack(e: *Evaluator) object.Obj {
@@ -275,17 +286,13 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 switch (object.obj_type(func)) {
                     .buildin => try eval_apply_buildin(e, func, args),
                     .func => {
+                        try push_stack(e, e.current_env);
                         try std.ArrayList(FuncFrame).append(&e.func_frames, FuncFrame {
                             .ret_func = e.current_func,
                             .ret_addr = e.program_pointer,
                             .base_stack_pointer = e.pool.stack_frames.items.len,
-                            .base_env = e.current_env,
                         });
-                        const function_id = @intCast(usize, object.get_func_id(func));
-                        e.current_env = object.get_func_env(func);
-                        e.current_func = function_id;
-                        e.program_pointer = 0;
-                        try push_stack(e, args);
+                        try jmp_to_func(e, func, args);
                         continue;
                     },
                     else => return EvalError.IllegalApplication,
@@ -310,11 +317,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                         } else {
                             try std.ArrayList(object.Obj).resize(&e.pool.stack_frames, 0);
                         }
-                        const function_id = @intCast(usize, object.get_func_id(func));
-                        e.current_env = object.get_func_env(func);
-                        e.current_func = function_id;
-                        e.program_pointer = 0;
-                        try push_stack(e, args);
+                        try jmp_to_func(e, func, args);
                         continue;
                     },
                     else => return EvalError.IllegalApplication,
@@ -332,7 +335,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
             .define => {
                 const val = pop_stack(e);
                 const key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
-                try object.push_frame_var(e.pool, e.globals, key, val);
+                try object.push_frame_var(e.pool, globals(e), key, val);
                 try push_stack(e, try object.create_undef(e.pool));
             },
             .cons => {
@@ -679,7 +682,7 @@ pub fn eval_compiled_global(e: *Evaluator, func_no: usize) !object.Obj {
     try std.ArrayList(FuncFrame).resize(&e.func_frames, 0);
     e.current_func = func_no;
     e.program_pointer = 0;
-    e.current_env = e.globals;
+    e.current_env = globals(e);
     return eval_loop(e);
 }
 
