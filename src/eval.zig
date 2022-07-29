@@ -14,6 +14,7 @@ const EvalError  = error {
 const OpCodeTag = enum(u32) {
     ret, // operand: no stack: VAL ->
     call, // operand: no stack: FUNC, ARGS -> RET
+    tailcall, // operand: no stack: FUNC, ARGS -> RET
     lookup, // operand: symbol number stack: -> VAL
     define, // operand: symbol number stack: VAL ->
     cons, // operand: no stack: CAR CDR -> CONS
@@ -242,10 +243,25 @@ fn list_length(s: object.Obj) anyerror!usize {
     return (try list_length(object.get_cdr(s))) + 1;
 }
 
+fn eval_apply_buildin(e:*Evaluator, func: object.Obj, args: object.Obj) !void {
+    const buildin_func = lookup_buildin_func(@intToEnum(BuildinFunc, object.get_buildin_value(func)));
+    const ret = try buildin_func(e, args, e.current_env);
+    try std.ArrayList(object.Obj).append(&e.stack_frames, ret);
+}
+
+fn ret_to_previous_func(e: *Evaluator, retval: object.Obj) !void {
+    const prev_func_frame = std.ArrayList(FuncFrame).pop(&e.func_frames);
+    e.program_pointer = prev_func_frame.ret_addr;
+    e.current_func = prev_func_frame.ret_func;
+    try std.ArrayList(object.Obj).resize(&e.stack_frames, prev_func_frame.base_stack_pointer);
+    e.current_env = prev_func_frame.base_env;
+    try std.ArrayList(object.Obj).append(&e.stack_frames, retval);
+}
+
 fn eval_loop(e: *Evaluator) !object.Obj {
     while(true) {
         const current_opcode = e.compiled_funcs.items[e.current_func].codes[e.program_pointer];
-        // std.debug.print("fun={} pp={} opcode={}\n", .{e.current_func, e.program_pointer, current_opcode});
+        // std.debug.print("fun={} pp={} sp={} opcode={}\n", .{e.current_func, e.program_pointer, e.stack_frames.items.len, current_opcode});
         switch (current_opcode.tag) {
             .call => {
                 if (e.func_frames.items.len > MAX_RECURSIVE_CALL) {
@@ -254,11 +270,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 const args = std.ArrayList(object.Obj).pop(&e.stack_frames);
                 const func = std.ArrayList(object.Obj).pop(&e.stack_frames);
                 switch (object.obj_type(func)) {
-                    .buildin => {
-                        const buildin_func = lookup_buildin_func(@intToEnum(BuildinFunc, object.get_buildin_value(func)));
-                        const ret = try buildin_func(e, args, e.current_env);
-                        try std.ArrayList(object.Obj).append(&e.stack_frames, ret);
-                    },
+                    .buildin => try eval_apply_buildin(e, func, args),
                     .func => {
                         try std.ArrayList(FuncFrame).append(&e.func_frames, FuncFrame {
                             .ret_func = e.current_func,
@@ -266,6 +278,35 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                             .base_stack_pointer = e.stack_frames.items.len,
                             .base_env = e.current_env,
                         });
+                        const function_id = @intCast(usize, object.get_func_id(func));
+                        e.current_env = object.get_func_env(func);
+                        e.current_func = function_id;
+                        e.program_pointer = 0;
+                        try std.ArrayList(object.Obj).append(&e.stack_frames, args);
+                        continue;
+                    },
+                    else => return EvalError.IllegalApplication,
+                }
+            },
+            .tailcall => {
+                const args = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const func = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                switch (object.obj_type(func)) {
+                    .buildin => {
+                        try eval_apply_buildin(e, func, args);
+                        const retval = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                        if (e.func_frames.items.len == 0) {
+                            return retval;
+                        }
+                        try ret_to_previous_func(e, retval);
+                    },
+                    .func => {
+                        if (e.func_frames.items.len > 0) {
+                            const current_func_frame = e.func_frames.items[e.func_frames.items.len - 1];
+                            try std.ArrayList(object.Obj).resize(&e.stack_frames, current_func_frame.base_stack_pointer);
+                        } else {
+                            try std.ArrayList(object.Obj).resize(&e.stack_frames, 0);
+                        }
                         const function_id = @intCast(usize, object.get_func_id(func));
                         e.current_env = object.get_func_env(func);
                         e.current_func = function_id;
@@ -365,12 +406,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 if (e.func_frames.items.len == 0) {
                     return retval;
                 }
-                const prev_func_frame = std.ArrayList(FuncFrame).pop(&e.func_frames);
-                e.program_pointer = prev_func_frame.ret_addr;
-                e.current_func = prev_func_frame.ret_func;
-                try std.ArrayList(object.Obj).resize(&e.stack_frames, prev_func_frame.base_stack_pointer);
-                e.current_env = prev_func_frame.base_env;
-                try std.ArrayList(object.Obj).append(&e.stack_frames, retval);
+                try ret_to_previous_func(e, retval);
             },
             .jmp => {
                 const ptr = @intCast(usize, current_opcode.operand);
@@ -397,12 +433,12 @@ fn emit_create_list(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode),
     }
     const car = object.get_car(s);
     const cdr = object.get_cdr(s);
-    try emit(e, car, codes, consts);
+    try emit(e, car, codes, consts, false);
     try emit_create_list(e, cdr, codes, consts);
     try std.ArrayList(OpCode).append(codes, OpCode{.tag = .cons});
 }
 
-fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts: *std.ArrayList(object.Obj)) anyerror!void {
+fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts: *std.ArrayList(object.Obj), tail: bool) anyerror!void {
     const car = object.get_car(s);
     const cdr = object.get_cdr(s);
     if (object.obj_type(car) == .symbol) {
@@ -415,6 +451,7 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
             const idx = consts.items.len;
             try std.ArrayList(object.Obj).append(consts, object.get_car(cdr));
             try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_const, .operand = @intCast(i32, idx)});
+            try emit_tail(e, codes, consts, tail);
             return;
         } else if (std.mem.eql(u8, symbol_val, "define")) {
             if ((try list_length(cdr)) < 2) {
@@ -426,9 +463,10 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
                 return EvalError.IllegalParameter;
             }
             const caddr = object.get_car(object.get_cdr(cdr));
-            try emit(e, caddr, codes, consts);
+            try emit(e, caddr, codes, consts, false);
             try std.ArrayList(OpCode).append(codes, OpCode{.tag = .define, .operand = @intCast(i32, object.get_symbol_id(key))});
             try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_undef});
+            try emit_tail(e, codes, consts, tail);
             return;
         } else if (std.mem.eql(u8, symbol_val, "lambda")) {
             if ((try list_length(cdr)) < 2) {
@@ -439,6 +477,7 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
             const body = object.get_car(object.get_cdr(cdr));
             const func_id = try emit_func(e, body, args);
             try std.ArrayList(OpCode).append(codes, OpCode{.tag = .closure, .operand = @intCast(i32, func_id)});
+            try emit_tail(e, codes, consts, tail);
             return;
         } else if (std.mem.eql(u8, symbol_val, "if")) {
             const length = try list_length(cdr);
@@ -447,13 +486,13 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
                 return EvalError.IllegalParameter;
             }
             const cond = object.get_car(cdr);
-            try emit(e, cond, codes, consts);
+            try emit(e, cond, codes, consts, false);
             const first_jmp = codes.items.len;
             try std.ArrayList(OpCode).append(codes, OpCode{.tag = .jmp_if_false, .operand = 0});
 
             // true branch
             const cddr = object.get_cdr(cdr);
-            try emit(e, object.get_car(cddr), codes, consts);
+            try emit(e, object.get_car(cddr), codes, consts, tail);
             const true_branch_jp = codes.items.len;
             try std.ArrayList(OpCode).append(codes, OpCode{.tag = .jmp, .operand = 0});
             codes.items[first_jmp].operand = @intCast(i32, codes.items.len);
@@ -461,9 +500,10 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
             //false branch
             if (length == 2) {
                 try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_undef});
+                try emit_tail(e,codes,consts, tail);
             } else {
                 const cadddr = object.get_car(object.get_cdr(cddr));
-                try emit(e, cadddr, codes, consts);
+                try emit(e, cadddr, codes, consts, tail);
             }
 
             codes.items[true_branch_jp].operand = @intCast(i32, codes.items.len);
@@ -488,14 +528,14 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
                 }
                 const symbol = object.get_car(bind_pair);
                 const body = object.get_car(object.get_cdr(bind_pair));
-                try emit(e, body, codes, consts);
+                try emit(e, body, codes, consts, false);
                 const symbol_id = object.get_symbol_id(symbol);
                 try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_new_var, .operand=@intCast(i32, symbol_id)});
                 current_binds = object.get_cdr(current_binds);
             }
             try std.ArrayList(OpCode).append(codes, OpCode{.tag = .set_frame});
             const body = object.get_car(object.get_cdr(cdr));
-            try emit(e, body, codes, consts);
+            try emit(e, body, codes, consts, tail);
             return;
         } else if (std.mem.eql(u8, symbol_val, "letrec")) {
             const length = try list_length(cdr);
@@ -529,35 +569,54 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
                 const symbol = object.get_car(bind_pair);
                 const symbol_id = object.get_symbol_id(symbol);
                 const body = object.get_car(object.get_cdr(bind_pair));
-                try emit(e, body, codes, consts);
+                try emit(e, body, codes, consts, false);
                 try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_new_var_current, .operand=@intCast(i32, symbol_id)});
                 current_binds = object.get_cdr(current_binds);
             }
             const body = object.get_car(object.get_cdr(cdr));
-            try emit(e, body, codes, consts);
+            try emit(e, body, codes, consts, tail);
             return;
         }
     }
-    try emit(e, car, codes, consts);
+    try emit(e, car, codes, consts, false);
     try emit_create_list(e, cdr, codes, consts);
-    try std.ArrayList(OpCode).append(codes, OpCode{.tag = .call});
+    try std.ArrayList(OpCode).append(codes, OpCode{.tag = if(tail) .tailcall else .call });
 }
 
-fn emit(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts: *std.ArrayList(object.Obj)) !void {
+fn emit_tail(_: *Evaluator, codes: *std.ArrayList(OpCode), _: *std.ArrayList(object.Obj), tail: bool) !void {
+    if (tail) {
+        try std.ArrayList(OpCode).append(codes, OpCode{.tag = .ret});
+    }
+}
+
+fn emit(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts: *std.ArrayList(object.Obj), tail: bool) !void {
     return switch(object.obj_type(s)) {
-        .b_true => std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_true}),
-        .b_false => std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_false}),
-        .number => std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_number, .operand = object.as_number(s)}),
-        .nil => std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_nil}),
+        .b_true => {
+            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_true});
+            try emit_tail(e,codes,consts,tail);
+        },
+        .b_false => {
+            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_false});
+            try emit_tail(e,codes,consts,tail);
+        },
+        .number => {
+            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_number, .operand = object.as_number(s)});
+            try emit_tail(e,codes,consts,tail);
+        },
+        .nil => {
+            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_nil});
+            try emit_tail(e,codes,consts,tail);
+        },
         .buildin => EvalError.UnexpectedIntervalValue,
         .undef => EvalError.UnexpectedIntervalValue,
         .frame => EvalError.UnexpectedIntervalValue,
         .symbol => {
             try std.ArrayList(OpCode).append(codes, OpCode{.tag = .lookup, .operand = @intCast(i32, object.get_symbol_id(s))});
+            try emit_tail(e,codes,consts,tail);
         },
         .func => EvalError.UnexpectedIntervalValue,
         .cons => {
-            try emit_cons(e, s, codes, consts);
+            try emit_cons(e, s, codes, consts, tail);
         },
     };
 }
@@ -601,8 +660,7 @@ pub fn emit_func(e: *Evaluator, s: object.Obj, args: object.Obj) !usize {
         }
     }
 
-    try emit(e, s, &codes, &consts);
-    try std.ArrayList(OpCode).append(&codes, OpCode{.tag = .ret});
+    try emit(e, s, &codes, &consts, true);
     const idx = e.compiled_funcs.items.len;
     try std.ArrayList(CompiledFunc).append(&e.compiled_funcs, CompiledFunc {
         .codes = std.ArrayList(OpCode).toOwnedSlice(&codes),
@@ -622,6 +680,7 @@ pub fn eval_compiled_global(e: *Evaluator, func_no: usize) !object.Obj {
 }
 
 pub fn eval_global(e: *Evaluator, s: object.Obj) !object.Obj {
+    // object.debug_println_obj(e.pool, s);
     const idx = try emit_func(e, s, try object.create_nil(e.pool));
     return eval_compiled_global(e, idx);
 }

@@ -70,7 +70,7 @@ pub const ObjType =  enum(u32) {
     func,
 };
 
-const INITIAL_BUF_SIZE = 100000;
+const INITIAL_BUF_SIZE = 1000000;
 
 pub const ObjPool = struct {
     buf: [] u8,
@@ -241,14 +241,14 @@ fn align_size(size: usize) usize {
 }
 
 const CreateError = error {
-    NoMeoryError,
+    NoMemoryError,
 };
 
 fn create(pool: *ObjPool, comptime T: type) !*T {
     const ptr = @ptrCast(*T, @alignCast(@alignOf(T), pool.current));
     pool.current+= align_size(@sizeOf(T));
     if (@ptrToInt(pool.current) > @ptrToInt(pool.end)) {
-        return CreateError.NoMeoryError;
+        return CreateError.NoMemoryError;
     }
     return ptr;
 }
