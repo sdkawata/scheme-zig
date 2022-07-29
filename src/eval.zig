@@ -67,7 +67,7 @@ pub const Evaluator = struct {
 const BuildinFunc = enum(i32) {
     plus,
     equal,
-    nil_p,
+    null_p,
     car,
     cdr,
     minus,
@@ -86,7 +86,7 @@ pub fn create_evaluator(allocator: std.mem.Allocator) !*Evaluator {
     evaluator.globals = g;
     try push_buildin_func(pool, g, "+", .plus);
     try push_buildin_func(pool, g, "=", .equal);
-    try push_buildin_func(pool, g, "nil?", .nil_p);
+    try push_buildin_func(pool, g, "null?", .null_p);
     try push_buildin_func(pool, g, "car", .car);
     try push_buildin_func(pool, g, "cdr", .cdr);
     try push_buildin_func(pool, g, "-", .minus);
@@ -114,7 +114,7 @@ fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)any
     return switch(f) {
         .plus => apply_plus,
         .equal => apply_equal,
-        .nil_p => apply_nil_p,
+        .null_p => apply_null_p,
         .car => apply_car,
         .cdr => apply_cdr,
         .minus => apply_minus,
@@ -178,7 +178,7 @@ fn apply_minus(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj 
 }
 
 
-fn apply_nil_p(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
+fn apply_null_p(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     if ((try list_length(s)) != 1) {
         std.debug.print("nil? expect 1 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
@@ -475,6 +475,46 @@ fn emit_cons(e: *Evaluator, s: object.Obj, codes: *std.ArrayList(OpCode), consts
                 current_binds = object.get_cdr(current_binds);
             }
             try std.ArrayList(OpCode).append(codes, OpCode{.tag = .set_frame});
+            const body = object.get_car(object.get_cdr(cdr));
+            try emit(e, body, codes, consts);
+            return;
+        } else if (std.mem.eql(u8, symbol_val, "letrec")) {
+            const length = try list_length(cdr);
+            object.debug_println_obj(e.pool, cdr);
+            if (length != 2) {
+                std.debug.print("letrec expect 2 but got {}\n", .{try list_length(cdr)});
+                return EvalError.IllegalParameter;
+            }
+
+            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .new_frame});
+
+            const bindlist = object.get_car(cdr);
+            var current_binds = bindlist;
+            while (object.obj_type(current_binds) != .nil) {
+                const bind_pair = object.get_car(current_binds);
+                const bind_pair_length = try list_length(bind_pair);
+                if (bind_pair_length != 2) {
+                    std.debug.print("illegal letrec form\n", .{});
+                    return EvalError.IllegalParameter;
+                }
+                const symbol = object.get_car(bind_pair);
+                const symbol_id = object.get_symbol_id(symbol);
+                try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_undef});
+                try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_new_var, .operand=@intCast(i32, symbol_id)});
+                current_binds = object.get_cdr(current_binds);
+            }
+            try std.ArrayList(OpCode).append(codes, OpCode{.tag = .set_frame});
+
+            current_binds = bindlist;
+            while (object.obj_type(current_binds) != .nil) {
+                const bind_pair = object.get_car(current_binds);
+                const symbol = object.get_car(bind_pair);
+                const symbol_id = object.get_symbol_id(symbol);
+                const body = object.get_car(object.get_cdr(bind_pair));
+                try emit(e, body, codes, consts);
+                try std.ArrayList(OpCode).append(codes, OpCode{.tag = .push_new_var_current, .operand=@intCast(i32, symbol_id)});
+                current_binds = object.get_cdr(current_binds);
+            }
             const body = object.get_car(object.get_cdr(cdr));
             try emit(e, body, codes, consts);
             return;
