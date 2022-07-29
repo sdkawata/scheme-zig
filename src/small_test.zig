@@ -15,7 +15,7 @@ test "execute small test" {
     defer allocator.free(content);
 
     const evaluator = try eval.create_evaluator(allocator);
-    defer eval.destroy_evaluator(evaluator, allocator);
+    defer eval.destroy_evaluator(evaluator);
     const parsed = try parser.parse_string(content, evaluator.pool);
     var current = parsed;
     while (object.obj_type(current) != .nil) {

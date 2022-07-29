@@ -87,12 +87,17 @@ pub fn create_evaluator(allocator: std.mem.Allocator) !*Evaluator {
     return evaluator;
 }
 
-pub fn destroy_evaluator(evaluator: *Evaluator, allocator: std.mem.Allocator) void {
-    object.destroy_obj_pool(evaluator.pool);
-    std.ArrayList(CompiledFunc).deinit(evaluator.compiled_funcs);
-    std.ArrayList(FuncFrame).deinit(evaluator.func_frames);
-    std.ArrayList(object.Obj).deinit(evaluator.stack_frames);
-    allocator.destroy(evaluator);
+pub fn destroy_evaluator(e: *Evaluator) void {
+    object.destroy_obj_pool(e.pool);
+    for (e.compiled_funcs.items) |func| {
+        e.allocator.free(func.codes);
+        e.allocator.free(func.consts);
+    }
+    std.ArrayList(CompiledFunc).deinit(e.compiled_funcs);
+    std.ArrayList(FuncFrame).deinit(e.func_frames);
+    std.ArrayList(object.Obj).deinit(e.stack_frames);
+    const allocator = e.allocator;
+    allocator.destroy(e);
 }
 
 fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)anyerror!object.Obj {

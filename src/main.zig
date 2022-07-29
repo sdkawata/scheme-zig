@@ -39,7 +39,7 @@ test "execute test scm files" {
         const trimed = std.mem.trim(u8, expected, " \n\r");
 
         const evaluator = try eval.create_evaluator(allocator);
-        defer eval.destroy_evaluator(evaluator, allocator);
+        defer eval.destroy_evaluator(evaluator);
         var p = parser.Parser{.s = content, .p = 0};
         var evaled = while(true) {
             const obj = try parser.parse(&p, evaluator.pool);
