@@ -246,7 +246,7 @@ fn list_length(s: object.Obj) anyerror!usize {
 fn eval_apply_buildin(e:*Evaluator, func: object.Obj, args: object.Obj) !void {
     const buildin_func = lookup_buildin_func(@intToEnum(BuildinFunc, object.get_buildin_value(func)));
     const ret = try buildin_func(e, args, e.current_env);
-    try std.ArrayList(object.Obj).append(&e.stack_frames, ret);
+    try push_stack(e, ret);
 }
 
 fn ret_to_previous_func(e: *Evaluator, retval: object.Obj) !void {
@@ -255,7 +255,15 @@ fn ret_to_previous_func(e: *Evaluator, retval: object.Obj) !void {
     e.current_func = prev_func_frame.ret_func;
     try std.ArrayList(object.Obj).resize(&e.stack_frames, prev_func_frame.base_stack_pointer);
     e.current_env = prev_func_frame.base_env;
-    try std.ArrayList(object.Obj).append(&e.stack_frames, retval);
+    try push_stack(e, retval);
+}
+
+fn pop_stack(e: *Evaluator) object.Obj {
+    return std.ArrayList(object.Obj).pop(&e.stack_frames);
+}
+
+fn push_stack(e: *Evaluator, obj:object.Obj) !void {
+    try std.ArrayList(object.Obj).append(&e.stack_frames, obj);
 }
 
 fn eval_loop(e: *Evaluator) !object.Obj {
@@ -267,8 +275,8 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 if (e.func_frames.items.len > MAX_RECURSIVE_CALL) {
                     return EvalError.MaxRecursiveCallExceeds;
                 }
-                const args = std.ArrayList(object.Obj).pop(&e.stack_frames);
-                const func = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const args = pop_stack(e);
+                const func = pop_stack(e);
                 switch (object.obj_type(func)) {
                     .buildin => try eval_apply_buildin(e, func, args),
                     .func => {
@@ -282,19 +290,19 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                         e.current_env = object.get_func_env(func);
                         e.current_func = function_id;
                         e.program_pointer = 0;
-                        try std.ArrayList(object.Obj).append(&e.stack_frames, args);
+                        try push_stack(e, args);
                         continue;
                     },
                     else => return EvalError.IllegalApplication,
                 }
             },
             .tailcall => {
-                const args = std.ArrayList(object.Obj).pop(&e.stack_frames);
-                const func = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const args = pop_stack(e);
+                const func = pop_stack(e);
                 switch (object.obj_type(func)) {
                     .buildin => {
                         try eval_apply_buildin(e, func, args);
-                        const retval = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                        const retval = pop_stack(e);
                         if (e.func_frames.items.len == 0) {
                             return retval;
                         }
@@ -311,7 +319,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                         e.current_env = object.get_func_env(func);
                         e.current_func = function_id;
                         e.program_pointer = 0;
-                        try std.ArrayList(object.Obj).append(&e.stack_frames, args);
+                        try push_stack(e, args);
                         continue;
                     },
                     else => return EvalError.IllegalApplication,
@@ -327,82 +335,82 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 );
             },
             .define => {
-                const val = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const val = pop_stack(e);
                 const key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
                 try object.push_frame_var(e.pool, e.globals, key, val);
-                try std.ArrayList(object.Obj).append(&e.stack_frames, try object.create_undef(e.pool));
+                try push_stack(e, try object.create_undef(e.pool));
             },
             .cons => {
-                const cdr = std.ArrayList(object.Obj).pop(&e.stack_frames);
-                const car = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const cdr = pop_stack(e);
+                const car = pop_stack(e);
                 const cons = try object.create_cons(e.pool, car, cdr);
-                try std.ArrayList(object.Obj).append(&e.stack_frames, cons);
+                try push_stack(e, cons);
             },
             .car => {
-                const cons = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const cons = pop_stack(e);
                 const car = object.get_car(cons);
-                try std.ArrayList(object.Obj).append(&e.stack_frames, car);
+                try push_stack(e, car);
             },
             .cdr => {
-                const cons = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const cons = pop_stack(e);
                 const cdr = object.get_cdr(cons);
-                try std.ArrayList(object.Obj).append(&e.stack_frames, cdr);
+                try push_stack(e, cdr);
             },
             .dup_car => {
                 const cons = peek_stack_top(e);
                 const car = object.get_car(cons);
-                try std.ArrayList(object.Obj).append(&e.stack_frames, car);
+                try push_stack(e, car);
             },
             .dup_cdr => {
                 const cons = peek_stack_top(e);
                 const cdr = object.get_cdr(cons);
-                try std.ArrayList(object.Obj).append(&e.stack_frames, cdr);
+                try push_stack(e, cdr);
             },
             .push_number => {
-                try std.ArrayList(object.Obj).append(&e.stack_frames, try object.create_number(e.pool, current_opcode.operand));
+                try push_stack(e, try object.create_number(e.pool, current_opcode.operand));
             },
             .push_true => {
-                try std.ArrayList(object.Obj).append(&e.stack_frames, try object.create_true(e.pool));
+                try push_stack(e, try object.create_true(e.pool));
             },
             .push_false => {
-                try std.ArrayList(object.Obj).append(&e.stack_frames, try object.create_false(e.pool));
+                try push_stack(e, try object.create_false(e.pool));
             },
             .push_nil => {
-                try std.ArrayList(object.Obj).append(&e.stack_frames, try object.create_nil(e.pool));
+                try push_stack(e, try object.create_nil(e.pool));
             },
             .push_undef => {
-                try std.ArrayList(object.Obj).append(&e.stack_frames, try object.create_undef(e.pool));
+                try push_stack(e, try object.create_undef(e.pool));
             },
             .push_const => {
-                try std.ArrayList(object.Obj).append(&e.stack_frames, e.compiled_funcs.items[e.current_func].consts[@intCast(usize, current_opcode.operand)]);
+                try push_stack(e, e.compiled_funcs.items[e.current_func].consts[@intCast(usize, current_opcode.operand)]);
             },
             .new_frame => {
                 const new_frame = try object.create_frame(e.pool, try object.create_nil(e.pool), e.current_env);
-                try std.ArrayList(object.Obj).append(&e.stack_frames, new_frame);
+                try push_stack(e, new_frame);
             },
             .push_new_var => {
-                const val = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const val = pop_stack(e);
                 const frame = peek_stack_top(e);
                 const key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
                 try object.push_frame_var(e.pool, frame, key, val);
             },
             .push_new_var_current => {
-                const val = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const val = pop_stack(e);
                 const key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
                 try object.push_frame_var(e.pool, e.current_env, key, val);
             },
             .set_frame => {
-                const frame = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const frame = pop_stack(e);
                 std.debug.assert(object.obj_type(frame) == .frame);
                 e.current_env = frame;
             },
             .closure => {
                 const function_id = @intCast(usize, current_opcode.operand);
                 const func = try object.create_func(e.pool, function_id, e.current_env);
-                try std.ArrayList(object.Obj).append(&e.stack_frames, func);
+                try push_stack(e, func);
             },
             .ret => {
-                const retval = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const retval = pop_stack(e);
                 if (e.func_frames.items.len == 0) {
                     return retval;
                 }
@@ -415,7 +423,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
             },
             .jmp_if_false => {
                 const ptr = @intCast(usize, current_opcode.operand);
-                const val = std.ArrayList(object.Obj).pop(&e.stack_frames);
+                const val = pop_stack(e);
                 if (object.obj_type(val) == .b_false) {
                     e.program_pointer = ptr;
                     continue;
