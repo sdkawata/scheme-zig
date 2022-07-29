@@ -30,8 +30,16 @@ pub fn skip_whitespaces(p: *Parser) !void {
     while(true) {
         const peeked = peek(p, 0) catch return;
         if (peeked == ' ' or peeked == '\r' or peeked == '\n') {
-
             p.p+=1;
+        } else if (peeked == ';') {
+            p.p+=1;
+            while(true) {
+                const peeked2 = peek(p,0) catch return;
+                if (peeked2 == '\n') {
+                    break;
+                }
+                p.p+=1;
+            }
         } else {
             return;
         }
@@ -161,6 +169,16 @@ test "parse number" {
     try std.testing.expectEqual(object.ObjType.number, object.obj_type(number));
     try std.testing.expectEqual(@intCast(i32, 42), object.as_number(number));
 }
+
+test "parse number with comment" {
+    const allocator: std.mem.Allocator = std.testing.allocator;
+    const pool = try object.create_obj_pool(allocator);
+    defer object.destroy_obj_pool(pool);
+    const number: object.Obj = try parse_string("42 ; -> this is comment !! <-", pool);
+    try std.testing.expectEqual(object.ObjType.number, object.obj_type(number));
+    try std.testing.expectEqual(@intCast(i32, 42), object.as_number(number));
+}
+
 test "parse list" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);

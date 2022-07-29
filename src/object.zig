@@ -198,7 +198,6 @@ pub fn get_frame_previous(obj: Obj) Obj {
 
 pub fn push_frame_var(pool: *ObjPool, obj: Obj, key: Obj, value: Obj) !void {
     assert(!is_value(obj) and obj_ref_type(obj) == .frame);
-    assert(obj_type(key) == .symbol);
     const header = as_obj_header(obj);
     const frame = @ptrCast(*ObjFrame, header);
     frame.vars = try create_cons(pool, try create_cons(pool, key, value), frame.vars);
@@ -208,15 +207,14 @@ pub const LookUpError = error {
     NotFound,
 };
 
-pub fn lookup_frame(obj: Obj, key: Obj) !Obj {
+pub fn lookup_frame(obj: Obj, symbol_id: usize) !Obj {
     assert(!is_value(obj) and obj_ref_type(obj) == .frame);
-    assert(is_value(key) and obj_value_type(key) == .symbol);
     var currentFrame = obj;
     while (obj_type(currentFrame) != .nil) {
         var currentVars = get_frame_vars(currentFrame);
         while (obj_type(currentVars) != .nil) {
             const varPair = get_car(currentVars);
-            if (get_symbol_id(key) == get_symbol_id(get_car(varPair))) {
+            if (symbol_id == get_symbol_id(get_car(varPair))) {
                 return get_cdr(varPair);
             }
             currentVars = get_cdr(currentVars);
@@ -261,6 +259,10 @@ fn alloc(pool: *ObjPool, size: usize) ![*]u8 {
     return ptr;
 }
 
+pub fn create_symbol_by_id(_: *ObjPool, id: usize) !Obj {
+    return create_value(ObjValueType.symbol, @intCast(i32, id));
+}
+
 pub fn create_symbol(pool: *ObjPool, str: [] const u8) !Obj {
     for (pool.symbol_table.items) |sym, i| {
         if (std.mem.eql(u8, sym, str)) {
@@ -271,7 +273,7 @@ pub fn create_symbol(pool: *ObjPool, str: [] const u8) !Obj {
     for(str[0..str.len]) |b, i| dest[i] = b;
     const idx = pool.symbol_table.items.len;
     try std.ArrayList([] const u8).append(&pool.symbol_table, dest);
-    return create_value(ObjValueType.symbol, @intCast(i32, idx));
+    return create_symbol_by_id(pool, idx);
 }
 
 fn init_header(header:*ObjHeader, o_type: ObjRefType, value: i32) !void {
