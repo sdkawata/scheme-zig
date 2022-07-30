@@ -153,8 +153,8 @@ fn apply_equal(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj 
         std.debug.print("= expect 2 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
-    const left = object.get_car(s);
-    const right = object.get_car(object.get_cdr(s));
+    const left = list_1st(s);
+    const right = list_2nd(s);
     if (object.obj_type(left) != .number or object.obj_type(right) != .number) {
         std.debug.print("must given number\n", .{});
         return EvalError.IllegalParameter;
@@ -171,8 +171,8 @@ fn apply_minus(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj 
         std.debug.print("= expect 2 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
-    const left = object.get_car(s);
-    const right = object.get_car(object.get_cdr(s));
+    const left = list_1st(s);
+    const right = list_2nd(s);
     if (object.obj_type(left) != .number or object.obj_type(right) != .number) {
         std.debug.print("must given number\n", .{});
         return EvalError.IllegalParameter;
@@ -189,7 +189,7 @@ fn apply_null_p(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj
         std.debug.print("nil? expect 1 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
-    if (object.obj_type(object.get_car(s)) == .nil) {
+    if (object.obj_type(list_1st(s)) == .nil) {
         return object.create_true(e.pool);
     } else {
         return object.create_false(e.pool);
@@ -227,8 +227,8 @@ fn apply_cons(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
         std.debug.print("cons expect 2 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
-    const car = object.get_car(s);
-    const cadr = object.get_car(object.get_cdr(s));
+    const car = list_1st(s);
+    const cadr =list_2nd(s);
     return object.create_cons(e.pool, car, cadr);
 }
 
@@ -240,6 +240,18 @@ pub fn list_length(s: object.Obj) anyerror!usize {
         return EvalError.IllegalParameter;
     }
     return (try list_length(object.get_cdr(s))) + 1;
+}
+
+pub fn list_1st(s: object.Obj) object.Obj {
+    return object.get_car(s);
+}
+
+pub fn list_2nd(s: object.Obj) object.Obj {
+    return object.get_car(object.get_cdr(s));
+}
+
+pub fn list_3rd(s: object.Obj) object.Obj {
+    return object.get_car(object.get_cdr(object.get_cdr(s)));
 }
 
 fn eval_apply_buildin(e:*Evaluator, func: object.Obj, args: object.Obj) !void {
