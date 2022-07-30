@@ -45,8 +45,14 @@ test "execute test scm files" {
         var p = parser.Parser{.s = content, .p = 0};
         var evaled = while(true) {
             const obj = try parser.parse(&p, evaluator.pool);
-            const emitted_idx = try emit.emit_func(evaluator, obj, try object.create_nil(evaluator.pool));
-            const evaled = try eval.eval_compiled_global(evaluator, emitted_idx);
+            const emitted_idx = emit.emit_func(evaluator, obj, try object.create_nil(evaluator.pool)) catch |err| {
+                std.debug.print("error occurred while emmiting code for {s}\n", .{name});
+                return err;
+            };
+            const evaled = eval.eval_compiled_global(evaluator, emitted_idx) catch |err| {
+                std.debug.print("error occurred while executing {s}\n", .{name});
+                return err;
+            };
             try parser.skip_whitespaces(&p);
             if (! parser.is_char_left(&p)) {
                 break evaled;
