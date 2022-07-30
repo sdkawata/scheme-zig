@@ -60,10 +60,10 @@ fn parse_list(p: *Parser, pool: *object.ObjPool) anyerror!object.Obj {
         p.p+=1;
         return object.create_nil(pool);
     } else {
-        const car: object.Obj = try parse_datum(p, pool);
+        var car: object.Obj = try parse_datum(p, pool);
         try skip_whitespaces(p);
-        const cdr = try parse_list(p, pool);
-        return object.create_cons(pool, car, cdr);
+        var cdr = try parse_list(p, pool);
+        return object.create_cons(pool, &car, &cdr);
     }
 }
 fn is_special_initial(c: u8) bool {
@@ -156,9 +156,9 @@ test "parse true & false" {
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool);
     const v_true = try parse_string("#t", pool);
-    try std.testing.expectEqual(object.ObjType.b_true, object.obj_type(v_true));
+    try std.testing.expectEqual(object.ObjType.b_true, object.obj_type(&v_true));
     const v_false = try parse_string("#f", pool);
-    try std.testing.expectEqual(object.ObjType.b_false, object.obj_type(v_false));
+    try std.testing.expectEqual(object.ObjType.b_false, object.obj_type(&v_false));
 }
 
 test "parse number" {
@@ -166,8 +166,8 @@ test "parse number" {
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool);
     const number: object.Obj = try parse_string("42", pool);
-    try std.testing.expectEqual(object.ObjType.number, object.obj_type(number));
-    try std.testing.expectEqual(@intCast(i32, 42), object.as_number(number));
+    try std.testing.expectEqual(object.ObjType.number, object.obj_type(&number));
+    try std.testing.expectEqual(@intCast(i32, 42), object.as_number(&number));
 }
 
 test "parse number with comment" {
@@ -175,23 +175,25 @@ test "parse number with comment" {
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool);
     const number: object.Obj = try parse_string("42 ; -> this is comment !! <-", pool);
-    try std.testing.expectEqual(object.ObjType.number, object.obj_type(number));
-    try std.testing.expectEqual(@intCast(i32, 42), object.as_number(number));
+    try std.testing.expectEqual(object.ObjType.number, object.obj_type(&number));
+    try std.testing.expectEqual(@intCast(i32, 42), object.as_number(&number));
 }
 
 test "parse list" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool);
-    try std.testing.expectEqual(object.ObjType.nil, object.obj_type(try parse_string("()", pool)));
+    const nil = try parse_string("()", pool);
+    try std.testing.expectEqual(object.ObjType.nil, object.obj_type(&nil));
     const list: object.Obj = try parse_string("( 42 43 )", pool);
-    const car: object.Obj = object.get_car(list);
-    const cadr: object.Obj = object.get_car(object.get_cdr(list));
-    try std.testing.expectEqual(object.ObjType.number, object.obj_type(car));
-    try std.testing.expectEqual(@intCast(i32, 42), object.as_number(car));
-    try std.testing.expectEqual(object.ObjType.number, object.obj_type(cadr));
-    try std.testing.expectEqual(@intCast(i32, 43), object.as_number(cadr));
-    try std.testing.expectEqual(object.ObjType.nil, object.obj_type(object.get_cdr(object.get_cdr(list))));
+    const car: object.Obj = object.get_car(&list);
+    const cadr: object.Obj = object.get_car(&object.get_cdr(&list));
+    const cddr: object.Obj = object.get_cdr(&object.get_cdr(&list));
+    try std.testing.expectEqual(object.ObjType.number, object.obj_type(&car));
+    try std.testing.expectEqual(@intCast(i32, 42), object.as_number(&car));
+    try std.testing.expectEqual(object.ObjType.number, object.obj_type(&cadr));
+    try std.testing.expectEqual(@intCast(i32, 43), object.as_number(&cadr));
+    try std.testing.expectEqual(object.ObjType.nil, object.obj_type(&cddr));
 }
 
 test "parse symbol" {
@@ -199,9 +201,9 @@ test "parse symbol" {
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool);
     const sym = try parse_string("very_long_symbol_name", pool);
-    try std.testing.expectEqual(object.ObjType.symbol, object.obj_type(sym));
+    try std.testing.expectEqual(object.ObjType.symbol, object.obj_type(&sym));
     const expected: [] const u8 = "very_long_symbol_name";
-    try std.testing.expectEqualStrings(expected, try object.as_symbol(pool, sym));
+    try std.testing.expectEqualStrings(expected, try object.as_symbol(pool, &sym));
 }
 
 
@@ -210,7 +212,7 @@ test "parse symbol +" {
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool);
     const sym = try parse_string("+", pool);
-    try std.testing.expectEqual(object.ObjType.symbol, object.obj_type(sym));
+    try std.testing.expectEqual(object.ObjType.symbol, object.obj_type(&sym));
     const expected: [] const u8 = "+";
-    try std.testing.expectEqualStrings(expected, try object.as_symbol(pool, sym));
+    try std.testing.expectEqualStrings(expected, try object.as_symbol(pool, &sym));
 }

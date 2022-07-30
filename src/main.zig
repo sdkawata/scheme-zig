@@ -3,6 +3,7 @@ const parser = @import("parser.zig");
 const eval = @import("eval.zig");
 const emit = @import("emit.zig");
 const object = @import("object.zig");
+const format = @import("format.zig");
 
 pub fn main() anyerror!void {
     std.log.info("All your codebase are belong to us.", .{});
@@ -52,6 +53,6 @@ test "execute test scm files" {
             }
         } else unreachable;
 
-        try object.expectFormatEqual(evaluator.pool, trimed, evaled);
+        try format.expectFormatEqual(evaluator.pool, trimed, evaled);
     }
 }

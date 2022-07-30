@@ -75,25 +75,25 @@ const BuildinFunc = enum(i32) {
 
 const MAX_RECURSIVE_CALL = 100;
 
-fn push_buildin_func(pool: *object.ObjPool, env: object.Obj, name: [] const u8, f: BuildinFunc) !void {
-    const symbol = try object.create_symbol(pool, name);
-    try object.push_frame_var(pool, env, symbol, try object.create_opaque(pool, @enumToInt(f)));
+fn push_buildin_func(pool: *object.ObjPool, env: *object.Obj, name: [] const u8, f: BuildinFunc) !void {
+    var symbol = try object.create_symbol(pool, name);
+    try object.push_frame_var(pool, env, &symbol, & try object.create_opaque(pool, @enumToInt(f)));
 }
 
 pub fn create_evaluator(allocator: std.mem.Allocator) !*Evaluator {
     const evaluator = try allocator.create(Evaluator);
     const pool = try object.create_obj_pool(allocator);
     evaluator.pool = pool;
-    const g = try object.create_frame(evaluator.pool, try object.create_nil(evaluator.pool), try object.create_nil(evaluator.pool));
+    var nil = try object.create_nil(evaluator.pool);
+    var g = try object.create_frame(evaluator.pool, &nil, &nil);
     try std.ArrayList(object.Obj).append(&evaluator.pool.consts, g);
-    evaluator.globals = g;
-    try push_buildin_func(pool, g, "+", .plus);
-    try push_buildin_func(pool, g, "=", .equal);
-    try push_buildin_func(pool, g, "null?", .null_p);
-    try push_buildin_func(pool, g, "car", .car);
-    try push_buildin_func(pool, g, "cdr", .cdr);
-    try push_buildin_func(pool, g, "-", .minus);
-    try push_buildin_func(pool, g, "cons", .cons);
+    try push_buildin_func(pool, &g, "+", .plus);
+    try push_buildin_func(pool, &g, "=", .equal);
+    try push_buildin_func(pool, &g, "null?", .null_p);
+    try push_buildin_func(pool, &g, "car", .car);
+    try push_buildin_func(pool, &g, "cdr", .cdr);
+    try push_buildin_func(pool, &g, "-", .minus);
+    try push_buildin_func(pool, &g, "cons", .cons);
     evaluator.allocator = allocator;
     evaluator.compiled_funcs = std.ArrayList(CompiledFunc).init(allocator);
     evaluator.func_frames = std.ArrayList(FuncFrame).init(allocator);
@@ -127,22 +127,18 @@ fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)any
     };
 }
 
-fn peek_stack_top(e: *Evaluator) object.Obj {
-    return e.pool.stack_frames.items[e.pool.stack_frames.items.len - 1];
-}
-
 fn apply_plus(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     var result: i32 = 0;
     var current = s;
-    while (object.obj_type(current) == .cons) {
-        const car = object.get_car(current);
-        if (object.obj_type(car) != .number) {
+    while (object.obj_type(&current) == .cons) {
+        const car = object.get_car(&current);
+        if (object.obj_type(&car) != .number) {
             return EvalError.IllegalParameter;
         }
-        result += object.as_number(car);
-        current = object.get_cdr(current);
+        result += object.as_number(&car);
+        current = object.get_cdr(&current);
     }
-    if (object.obj_type(current) != .nil) {
+    if (object.obj_type(&current) != .nil) {
         return EvalError.IllegalParameter;
     }
     return object.create_number(e.pool, result);
@@ -155,11 +151,11 @@ fn apply_equal(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj 
     }
     const left = list_1st(s);
     const right = list_2nd(s);
-    if (object.obj_type(left) != .number or object.obj_type(right) != .number) {
+    if (object.obj_type(&left) != .number or object.obj_type(&right) != .number) {
         std.debug.print("must given number\n", .{});
         return EvalError.IllegalParameter;
     }
-    if (object.as_number(left) == object.as_number(right)) {
+    if (object.as_number(&left) == object.as_number(&right)) {
         return object.create_true(e.pool);
     } else {
         return object.create_false(e.pool);
@@ -173,13 +169,13 @@ fn apply_minus(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj 
     }
     const left = list_1st(s);
     const right = list_2nd(s);
-    if (object.obj_type(left) != .number or object.obj_type(right) != .number) {
+    if (object.obj_type(&left) != .number or object.obj_type(&right) != .number) {
         std.debug.print("must given number\n", .{});
         return EvalError.IllegalParameter;
     }
     return object.create_number(
         e.pool,
-        object.as_number(left) - object.as_number(right)
+        object.as_number(&left) - object.as_number(&right)
     );
 }
 
@@ -189,7 +185,7 @@ fn apply_null_p(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj
         std.debug.print("nil? expect 1 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
-    if (object.obj_type(list_1st(s)) == .nil) {
+    if (object.obj_type(&list_1st(s)) == .nil) {
         return object.create_true(e.pool);
     } else {
         return object.create_false(e.pool);
@@ -201,12 +197,12 @@ fn apply_car(_: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
         std.debug.print("car expect 1 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
-    const car = object.get_car(s);
-    if (object.obj_type(car) != .cons) {
+    const car = object.get_car(&s);
+    if (object.obj_type(&car) != .cons) {
         std.debug.print("car got non-list\n", .{});
         return EvalError.IllegalParameter;
     }
-    return object.get_car(car);
+    return object.get_car(&car);
 }
 
 fn apply_cdr(_: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
@@ -214,12 +210,12 @@ fn apply_cdr(_: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
         std.debug.print("cdr expect 1 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
-    const car = object.get_car(s);
-    if (object.obj_type(car) != .cons) {
+    const car = object.get_car(&s);
+    if (object.obj_type(&car) != .cons) {
         std.debug.print("car got non-list\n", .{});
         return EvalError.IllegalParameter;
     }
-    return object.get_cdr(car);
+    return object.get_cdr(&car);
 }
 
 fn apply_cons(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
@@ -227,35 +223,35 @@ fn apply_cons(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
         std.debug.print("cons expect 2 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
-    const car = list_1st(s);
-    const cadr =list_2nd(s);
-    return object.create_cons(e.pool, car, cadr);
+    var car = list_1st(s);
+    var cadr = list_2nd(s);
+    return object.create_cons(e.pool, &car, &cadr);
 }
 
 pub fn list_length(s: object.Obj) anyerror!usize {
-    if (object.obj_type(s) == .nil) {
+    if (object.obj_type(&s) == .nil) {
         return @intCast(usize, 0);
     }
-    if (object.obj_type(s) != .cons) {
+    if (object.obj_type(&s) != .cons) {
         return EvalError.IllegalParameter;
     }
-    return (try list_length(object.get_cdr(s))) + 1;
+    return (try list_length(object.get_cdr(&s))) + 1;
 }
 
 pub fn list_1st(s: object.Obj) object.Obj {
-    return object.get_car(s);
+    return object.get_car(&s);
 }
 
 pub fn list_2nd(s: object.Obj) object.Obj {
-    return object.get_car(object.get_cdr(s));
+    return object.get_car(&object.get_cdr(&s));
 }
 
 pub fn list_3rd(s: object.Obj) object.Obj {
-    return object.get_car(object.get_cdr(object.get_cdr(s)));
+    return object.get_car(&object.get_cdr(&object.get_cdr(&s)));
 }
 
 fn eval_apply_buildin(e:*Evaluator, func: object.Obj, args: object.Obj) !void {
-    const buildin_func = lookup_buildin_func(@intToEnum(BuildinFunc, object.get_buildin_value(func)));
+    const buildin_func = lookup_buildin_func(@intToEnum(BuildinFunc, object.get_buildin_value(&func)));
     const ret = try buildin_func(e, args, e.current_env);
     try push_stack(e, ret);
 }
@@ -270,14 +266,21 @@ fn ret_to_previous_func(e: *Evaluator, retval: object.Obj) !void {
 }
 
 fn jmp_to_func(e: *Evaluator, func: object.Obj, args: object.Obj) !void {
-    e.current_env = object.get_func_env(func);  
-    e.current_func = @intCast(usize, object.get_func_id(func));
+    e.current_env = object.get_func_env(&func);  
+    e.current_func = @intCast(usize, object.get_func_id(&func));
     e.program_pointer = 0;
     try push_stack(e, args);
 }
 
 fn pop_stack(e: *Evaluator) object.Obj {
     return std.ArrayList(object.Obj).pop(&e.pool.stack_frames);
+}
+
+fn peek_stack_top(e: *Evaluator) *object.Obj {
+    return &e.pool.stack_frames.items[e.pool.stack_frames.items.len - 1];
+}
+fn peek_stack_2nd(e: *Evaluator) *object.Obj {
+    return &e.pool.stack_frames.items[e.pool.stack_frames.items.len - 2];
 }
 
 fn push_stack(e: *Evaluator, obj:object.Obj) !void {
@@ -295,7 +298,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 }
                 const args = pop_stack(e);
                 const func = pop_stack(e);
-                switch (object.obj_type(func)) {
+                switch (object.obj_type(&func)) {
                     .buildin => try eval_apply_buildin(e, func, args),
                     .func => {
                         try push_stack(e, e.current_env);
@@ -313,7 +316,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
             .tailcall => {
                 const args = pop_stack(e);
                 const func = pop_stack(e);
-                switch (object.obj_type(func)) {
+                switch (object.obj_type(&func)) {
                     .buildin => {
                         try eval_apply_buildin(e, func, args);
                         const retval = pop_stack(e);
@@ -336,7 +339,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 }
             },
             .lookup => {
-                const val = object.lookup_frame(e.current_env, @intCast(usize, current_opcode.operand)) catch |err| if (err == object.LookUpError.NotFound) {
+                const val = object.lookup_frame(&e.current_env, @intCast(usize, current_opcode.operand)) catch |err| if (err == object.LookUpError.NotFound) {
                    return EvalError.VariableNotFound;
                 } else {return err;};
                 try std.ArrayList(object.Obj).append(
@@ -345,25 +348,25 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 );
             },
             .define => {
-                const val = pop_stack(e);
-                const key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
-                try object.push_frame_var(e.pool, globals(e), key, val);
+                var val = pop_stack(e);
+                var key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
+                try object.push_frame_var(e.pool, &globals(e), &key, &val);
                 try push_stack(e, try object.create_undef(e.pool));
             },
             .cons => {
-                const cdr = pop_stack(e);
-                const car = pop_stack(e);
-                const cons = try object.create_cons(e.pool, car, cdr);
+                var cdr = pop_stack(e);
+                var car = pop_stack(e);
+                const cons = try object.create_cons(e.pool, &car, &cdr);
                 try push_stack(e, cons);
             },
             .car => {
                 const cons = pop_stack(e);
-                const car = object.get_car(cons);
+                const car = object.get_car(&cons);
                 try push_stack(e, car);
             },
             .cdr => {
                 const cons = pop_stack(e);
-                const cdr = object.get_cdr(cons);
+                const cdr = object.get_cdr(&cons);
                 try push_stack(e, cdr);
             },
             .dup_car => {
@@ -395,28 +398,28 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 try push_stack(e, e.pool.consts.items[@intCast(usize, current_opcode.operand)]);
             },
             .new_frame => {
-                const new_frame = try object.create_frame(e.pool, try object.create_nil(e.pool), e.current_env);
+                const new_frame = try object.create_frame(e.pool, &try object.create_nil(e.pool), &e.current_env);
                 try push_stack(e, new_frame);
             },
             .push_new_var => {
-                const val = pop_stack(e);
-                const frame = peek_stack_top(e);
-                const key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
-                try object.push_frame_var(e.pool, frame, key, val);
+                var val = pop_stack(e);
+                var frame = peek_stack_top(e);
+                var key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
+                try object.push_frame_var(e.pool, frame, &key, &val);
             },
             .push_new_var_current => {
-                const val = pop_stack(e);
-                const key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
-                try object.push_frame_var(e.pool, e.current_env, key, val);
+                var val = pop_stack(e);
+                var key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
+                try object.push_frame_var(e.pool, &e.current_env, &key, &val);
             },
             .set_frame => {
                 const frame = pop_stack(e);
-                std.debug.assert(object.obj_type(frame) == .frame);
+                std.debug.assert(object.obj_type(&frame) == .frame);
                 e.current_env = frame;
             },
             .closure => {
                 const function_id = @intCast(usize, current_opcode.operand);
-                const func = try object.create_func(e.pool, function_id, e.current_env);
+                const func = try object.create_func(e.pool, function_id, &e.current_env);
                 try push_stack(e, func);
             },
             .ret => {
@@ -434,7 +437,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
             .jmp_if_false => {
                 const ptr = @intCast(usize, current_opcode.operand);
                 const val = pop_stack(e);
-                if (object.obj_type(val) == .b_false) {
+                if (object.obj_type(&val) == .b_false) {
                     e.program_pointer = ptr;
                     continue;
                 }

@@ -8,29 +8,29 @@ const EmitError = error {
 };
 
 fn emit_create_list(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCode)) anyerror!void {
-    if (object.obj_type(s) == .nil) {
+    if (object.obj_type(&s) == .nil) {
         try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_nil});
         return;
     }
-    const car = object.get_car(s);
-    const cdr = object.get_cdr(s);
+    const car = object.get_car(&s);
+    const cdr = object.get_cdr(&s);
     try emit(e, car, codes, false);
     try emit_create_list(e, cdr, codes);
     try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .cons});
 }
 
 fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCode), tail: bool) anyerror!void {
-    const car = object.get_car(s);
-    const cdr = object.get_cdr(s);
-    if (object.obj_type(car) == .symbol) {
-        const symbol_val = try object.as_symbol(e.pool, car);
+    const car = object.get_car(&s);
+    const cdr = object.get_cdr(&s);
+    if (object.obj_type(&car) == .symbol) {
+        const symbol_val = try object.as_symbol(e.pool, &car);
         if (std.mem.eql(u8, symbol_val, "quote")) {
             if ((try eval.list_length(cdr)) != 1) {
                 std.debug.print("malformed quote: expect 1 args but got {}\n", .{try eval.list_length(cdr)});
                 return EmitError.MalformError;
             }
             const idx = e.pool.consts.items.len;
-            try std.ArrayList(object.Obj).append(&e.pool.consts, object.get_car(cdr));
+            try std.ArrayList(object.Obj).append(&e.pool.consts, object.get_car(&cdr));
             try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_const, .operand = @intCast(i32, idx)});
             try emit_tail(e, codes, tail);
             return;
@@ -40,12 +40,12 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
                 return EmitError.MalformError;
             }
             const key =eval.list_1st(cdr);
-            if (object.obj_type(key) != .symbol) {
+            if (object.obj_type(&key) != .symbol) {
                 return EmitError.MalformError;
             }
             const body = eval.list_2nd(cdr);
             try emit(e, body, codes, false);
-            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .define, .operand = @intCast(i32, object.get_symbol_id(key))});
+            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .define, .operand = @intCast(i32, object.get_symbol_id(&key))});
             try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_undef});
             try emit_tail(e, codes, tail);
             return;
@@ -66,7 +66,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
                 std.debug.print("malformed if expect 2 or 3 args but got {}\n", .{try eval.list_length(cdr)});
                 return EmitError.MalformError;
             }
-            const cond = object.get_car(cdr);
+            const cond = object.get_car(&cdr);
             try emit(e, cond, codes, false);
             const first_jmp = codes.items.len;
             try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .jmp_if_false, .operand = 0});
@@ -102,8 +102,8 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
 
             const bindlist = eval.list_1st(cdr);
             var current_binds = bindlist;
-            while (object.obj_type(current_binds) != .nil) {
-                const bind_pair = object.get_car(current_binds);
+            while (object.obj_type(&current_binds) != .nil) {
+                const bind_pair = object.get_car(&current_binds);
                 const bind_pair_length = try eval.list_length(cdr);
                 if (bind_pair_length != 2) {
                     std.debug.print("illegal let form\n", .{});
@@ -112,9 +112,9 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
                 const symbol =eval.list_1st(bind_pair);
                 const body = eval.list_2nd(bind_pair);
                 try emit(e, body, codes, false);
-                const symbol_id = object.get_symbol_id(symbol);
+                const symbol_id = object.get_symbol_id(&symbol);
                 try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_new_var, .operand=@intCast(i32, symbol_id)});
-                current_binds = object.get_cdr(current_binds);
+                current_binds = object.get_cdr(&current_binds);
             }
             try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .set_frame});
             const body = eval.list_2nd(cdr);
@@ -131,28 +131,28 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
 
             const bindlist = eval.list_1st(cdr);
             var current_binds = bindlist;
-            while (object.obj_type(current_binds) != .nil) {
-                const bind_pair = object.get_car(current_binds);
+            while (object.obj_type(&current_binds) != .nil) {
+                const bind_pair = object.get_car(&current_binds);
                 const bind_pair_length = try eval.list_length(bind_pair);
                 if (bind_pair_length != 2) {
                     std.debug.print("illegal letrec form\n", .{});
                     return EmitError.MalformError;
                 }
-                const symbol_id = object.get_symbol_id(eval.list_1st(bind_pair));
+                const symbol_id = object.get_symbol_id(&eval.list_1st(bind_pair));
                 try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_undef});
                 try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_new_var, .operand=@intCast(i32, symbol_id)});
-                current_binds = object.get_cdr(current_binds);
+                current_binds = object.get_cdr(&current_binds);
             }
             try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .set_frame});
 
             current_binds = bindlist;
-            while (object.obj_type(current_binds) != .nil) {
-                const bind_pair = object.get_car(current_binds);
-                const symbol_id = object.get_symbol_id(eval.list_1st(bind_pair));
+            while (object.obj_type(&current_binds) != .nil) {
+                const bind_pair = object.get_car(&current_binds);
+                const symbol_id = object.get_symbol_id(&eval.list_1st(bind_pair));
                 const body = eval.list_2nd(bind_pair);
                 try emit(e, body, codes, false);
                 try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_new_var_current, .operand=@intCast(i32, symbol_id)});
-                current_binds = object.get_cdr(current_binds);
+                current_binds = object.get_cdr(&current_binds);
             }
             const body = eval.list_2nd(cdr);
             try emit(e, body, codes, tail);
@@ -171,7 +171,7 @@ fn emit_tail(_: *eval.Evaluator, codes: *std.ArrayList(eval.OpCode), tail: bool)
 }
 
 fn emit(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCode), tail: bool) !void {
-    return switch(object.obj_type(s)) {
+    return switch(object.obj_type(&s)) {
         .b_true => {
             try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_true});
             try emit_tail(e,codes,tail);
@@ -181,7 +181,7 @@ fn emit(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCode), t
             try emit_tail(e,codes,tail);
         },
         .number => {
-            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_number, .operand = object.as_number(s)});
+            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_number, .operand = object.as_number(&s)});
             try emit_tail(e,codes,tail);
         },
         .nil => {
@@ -192,7 +192,7 @@ fn emit(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCode), t
         .undef => EmitError.UnexpectedIntervalValue,
         .frame => EmitError.UnexpectedIntervalValue,
         .symbol => {
-            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .lookup, .operand = @intCast(i32, object.get_symbol_id(s))});
+            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .lookup, .operand = @intCast(i32, object.get_symbol_id(&s))});
             try emit_tail(e,codes,tail);
         },
         .func => EmitError.UnexpectedIntervalValue,
@@ -206,17 +206,17 @@ pub fn emit_func(e: *eval.Evaluator, s: object.Obj, args: object.Obj) !usize {
     var codes = std.ArrayList(eval.OpCode).init(e.allocator);
     defer std.ArrayList(eval.OpCode).deinit(codes);
 
-    if (object.obj_type(args) != .nil) {
+    if (object.obj_type(&args) != .nil) {
         var current_args = args;
         while (true) {
-            if (object.obj_type(current_args) != .cons) {
+            if (object.obj_type(&current_args) != .cons) {
                 std.debug.print("illegal func arg param\n", .{});
                 return EmitError.MalformError;
             }
-            const symbol = object.get_car(current_args);
-            const symbol_id = object.get_symbol_id(symbol);
-            const cdr = object.get_cdr(current_args);
-            if (object.obj_type(cdr) != .nil) {
+            const symbol = object.get_car(&current_args);
+            const symbol_id = object.get_symbol_id(&symbol);
+            const cdr = object.get_cdr(&current_args);
+            if (object.obj_type(&cdr) != .nil) {
                 try std.ArrayList(eval.OpCode).append(&codes, eval.OpCode{.tag = .dup_car});
                 try std.ArrayList(eval.OpCode).append(&codes, eval.OpCode{.tag = .push_new_var_current, .operand=@intCast(i32, symbol_id)});
                 try std.ArrayList(eval.OpCode).append(&codes, eval.OpCode{.tag = .cdr});
