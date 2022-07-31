@@ -347,7 +347,9 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 }
             },
             .lookup => {
-                const val = object.lookup_frame(&e.pool.current_env, @intCast(usize, current_opcode.operand)) catch |err| if (err == object.LookUpError.NotFound) {
+                const idx = @intCast(usize, current_opcode.operand);
+                const val = object.lookup_frame(&e.pool.current_env, idx) catch |err| if (err == object.LookUpError.NotFound) {
+                   std.debug.print("variable not found {s}\n", .{e.pool.symbol_table.items[idx]});
                    return EvalError.VariableNotFound;
                 } else {return err;};
                 try std.ArrayList(object.Obj).append(
