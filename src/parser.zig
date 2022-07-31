@@ -139,6 +139,9 @@ fn parse_datum(p:*Parser, pool: *object.ObjPool) anyerror!object.Obj {
 }
 
 pub fn parse(p:*Parser, pool: *object.ObjPool) !object.Obj {
+    const prev_gc_enabled = pool.gc_enabled;
+    pool.gc_enabled = false;
+    defer pool.gc_enabled = prev_gc_enabled;
     try skip_whitespaces(p);
     return parse_datum(p, pool);
 }

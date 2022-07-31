@@ -60,7 +60,6 @@ pub const Evaluator = struct {
     func_frames: std.ArrayList(FuncFrame),
     program_pointer: usize,
     current_func: usize,
-    current_env: object.Obj,
 };
 
 const BuildinFunc = enum(i32) {
@@ -252,7 +251,7 @@ pub fn list_3rd(s: object.Obj) object.Obj {
 
 fn eval_apply_buildin(e:*Evaluator, func: object.Obj, args: object.Obj) !void {
     const buildin_func = lookup_buildin_func(@intToEnum(BuildinFunc, object.get_buildin_value(&func)));
-    const ret = try buildin_func(e, args, e.current_env);
+    const ret = try buildin_func(e, args, e.pool.current_env);
     try push_stack(e, ret);
 }
 
@@ -261,12 +260,12 @@ fn ret_to_previous_func(e: *Evaluator, retval: object.Obj) !void {
     e.program_pointer = prev_func_frame.ret_addr;
     e.current_func = prev_func_frame.ret_func;
     try std.ArrayList(object.Obj).resize(&e.pool.stack_frames, prev_func_frame.base_stack_pointer);
-    e.current_env = pop_stack(e);
+    e.pool.current_env = pop_stack(e);
     try push_stack(e, retval);
 }
 
 fn jmp_to_func(e: *Evaluator, func: object.Obj, args: object.Obj) !void {
-    e.current_env = object.get_func_env(&func);  
+    e.pool.current_env = object.get_func_env(&func);
     e.current_func = @intCast(usize, object.get_func_id(&func));
     e.program_pointer = 0;
     try push_stack(e, args);
@@ -301,7 +300,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 switch (object.obj_type(&func)) {
                     .buildin => try eval_apply_buildin(e, func, args),
                     .func => {
-                        try push_stack(e, e.current_env);
+                        try push_stack(e, e.pool.current_env);
                         try std.ArrayList(FuncFrame).append(&e.func_frames, FuncFrame {
                             .ret_func = e.current_func,
                             .ret_addr = e.program_pointer,
@@ -339,7 +338,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 }
             },
             .lookup => {
-                const val = object.lookup_frame(&e.current_env, @intCast(usize, current_opcode.operand)) catch |err| if (err == object.LookUpError.NotFound) {
+                const val = object.lookup_frame(&e.pool.current_env, @intCast(usize, current_opcode.operand)) catch |err| if (err == object.LookUpError.NotFound) {
                    return EvalError.VariableNotFound;
                 } else {return err;};
                 try std.ArrayList(object.Obj).append(
@@ -398,7 +397,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 try push_stack(e, e.pool.consts.items[@intCast(usize, current_opcode.operand)]);
             },
             .new_frame => {
-                const new_frame = try object.create_frame(e.pool, &try object.create_nil(e.pool), &e.current_env);
+                const new_frame = try object.create_frame(e.pool, &try object.create_nil(e.pool), &e.pool.current_env);
                 try push_stack(e, new_frame);
             },
             .push_new_var => {
@@ -410,16 +409,16 @@ fn eval_loop(e: *Evaluator) !object.Obj {
             .push_new_var_current => {
                 var val = pop_stack(e);
                 var key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
-                try object.push_frame_var(e.pool, &e.current_env, &key, &val);
+                try object.push_frame_var(e.pool, &e.pool.current_env, &key, &val);
             },
             .set_frame => {
                 const frame = pop_stack(e);
                 std.debug.assert(object.obj_type(&frame) == .frame);
-                e.current_env = frame;
+                e.pool.current_env = frame;
             },
             .closure => {
                 const function_id = @intCast(usize, current_opcode.operand);
-                const func = try object.create_func(e.pool, function_id, &e.current_env);
+                const func = try object.create_func(e.pool, function_id, &e.pool.current_env);
                 try push_stack(e, func);
             },
             .ret => {
@@ -462,6 +461,6 @@ pub fn eval_compiled_global(e: *Evaluator, func_no: usize) !object.Obj {
     try std.ArrayList(FuncFrame).resize(&e.func_frames, 0);
     e.current_func = func_no;
     e.program_pointer = 0;
-    e.current_env = globals(e);
+    e.pool.current_env = globals(e);
     return eval_loop(e);
 }

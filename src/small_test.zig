@@ -35,6 +35,7 @@ test "execute small test" {
         defer eval.destroy_evaluator(evaluator);
         const expr = try parser.parse_string(expr_str, evaluator.pool);
         const expected = try parser.parse_string(expected_str, evaluator.pool);
+        evaluator.pool.gc_every_time = true;
 
         // std.debug.print("evaling {s}\n", .{expr_str});
 

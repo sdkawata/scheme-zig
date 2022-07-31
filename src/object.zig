@@ -42,6 +42,12 @@ const ObjFunc = packed struct {
     env: Obj,
 };
 
+
+const ObjForwarded = packed struct {
+    header: ObjHeader,
+    forwarding_addr: Obj,
+};
+
 const ObjValueType = enum(u16) {
     b_true,
     b_false,
@@ -51,10 +57,12 @@ const ObjValueType = enum(u16) {
     symbol,
     undef,
 };
+
 const ObjRefType = enum(u32) {
     cons,
     frame,
     func,
+    forwarded,
 };
 
 pub const ObjType =  enum(u32) {
@@ -75,12 +83,17 @@ const INITIAL_BUF_SIZE = 1000000;
 pub const ObjPool = struct {
     buf: [] u8,
     current: [*] u8,
-    end: [*] u8,
+    from_space: [*] u8,
+    to_space: [*] u8,
+    space_size: usize,
     symbol_table: std.ArrayList([] const u8),
     allocator: std.mem.Allocator,
     stack_frames: std.ArrayList(Obj),
     consts: std.ArrayList(Obj),
-    gc_enabled: bool = true,
+    root: std.ArrayList(*Obj),
+    gc_enabled: bool,
+    gc_every_time: bool,
+    current_env: Obj,
 };
 
 fn is_value (obj:* const Obj) bool {
@@ -93,9 +106,13 @@ fn as_obj(header: *ObjHeader) Obj {
     return @intCast(u64, @ptrToInt(header));
 }
 
+fn obj_ref_type_from_header(header: *ObjHeader) ObjRefType {
+    return @intToEnum(ObjRefType, @intCast(u32, header.i & 0xffff));
+}
+
 fn obj_ref_type(obj:* const Obj) ObjRefType {
     assert(!is_value(obj));
-    return @intToEnum(ObjRefType, @intCast(u32, as_obj_header(obj).i & 0xffff));
+    return obj_ref_type_from_header(as_obj_header(obj));
 }
 
 fn obj_value_type(obj: * const Obj) ObjValueType {
@@ -119,6 +136,7 @@ pub fn obj_type (obj: * const Obj) ObjType {
             .cons => .cons,
             .frame => .frame,
             .func => .func,
+            .forwarded => unreachable,
         };
     }
 }
@@ -226,11 +244,16 @@ pub fn lookup_frame(obj: * const Obj, symbol_id: usize) !Obj {
 pub fn create_obj_pool(allocator: std.mem.Allocator) !*ObjPool {
     const pool = try allocator.create(ObjPool);
     pool.buf = try allocator.alloc(u8, INITIAL_BUF_SIZE);
-    pool.current = @ptrCast([*] u8, &pool.buf[0]);
-    pool.end = pool.current + INITIAL_BUF_SIZE;
+    pool.space_size = INITIAL_BUF_SIZE / 2;
+    pool.from_space = @ptrCast([*] u8, &pool.buf[0]);
+    pool.current = pool.from_space;
+    pool.to_space = pool.from_space + pool.space_size;
     pool.symbol_table = std.ArrayList([] const u8).init(allocator);
     pool.stack_frames = std.ArrayList(Obj).init(allocator);
     pool.consts = std.ArrayList(Obj).init(allocator);
+    pool.root = std.ArrayList(*Obj).init(allocator);
+    pool.gc_enabled = true;
+    pool.gc_every_time = false;
     pool.allocator = allocator;
     return pool;
 }
@@ -243,6 +266,7 @@ pub fn destroy_obj_pool(pool: *ObjPool) void {
     std.ArrayList([] const u8).deinit(pool.symbol_table);
     std.ArrayList(Obj).deinit(pool.stack_frames);
     std.ArrayList(Obj).deinit(pool.consts);
+    std.ArrayList(*Obj).deinit(pool.root);
     pool.allocator.destroy(pool);
 }
 
@@ -255,18 +279,105 @@ const CreateError = error {
 };
 
 fn create(pool: *ObjPool, comptime T: type) !*T {
-    const ptr = @ptrCast(*T, @alignCast(@alignOf(T), pool.current));
-    pool.current+= align_size(@sizeOf(T));
-    if (@ptrToInt(pool.current) > @ptrToInt(pool.end)) {
-        return CreateError.NoMemoryError;
-    }
-    return ptr;
+    const size = align_size(@sizeOf(T));
+    return @ptrCast(*T, @alignCast(@alignOf(T), try alloc(pool, size)));
+}
+
+fn space_left(pool: *ObjPool, size: usize) bool {
+    return @ptrToInt(pool.current) + size - @ptrToInt(pool.from_space) >=  pool.space_size;
 }
 
 fn alloc(pool: *ObjPool, size: usize) ![*]u8 {
+    // std.debug.print("alloc from:{*} to:{*} current:{*}\n", .{pool.from_space, pool.to_space, pool.current});
+    if ((space_left(pool, size) or pool.gc_every_time) and pool.gc_enabled) {
+        try start_gc(pool);
+    }
+    if (space_left(pool, size)) {
+        return CreateError.NoMemoryError;
+    }
     const ptr = @ptrCast([*]u8, pool.current);
     pool.current+= align_size(size);
     return ptr;
+}
+
+fn obj_size(obj:Obj) Obj {
+    return switch(obj_ref_type(&obj)) {
+        .cons => @sizeOf(ObjConsCell),
+        .frame => @sizeOf(ObjFrame),
+        .func => @sizeOf(ObjFunc),
+        .forwarded => unreachable,
+    };
+}
+
+fn copy_obj(pool: *ObjPool, obj:Obj) ! Obj {
+    if (is_value(&obj)) {
+        return obj;
+    }
+    if (@ptrToInt(pool.from_space) <= obj and obj < (@ptrToInt(pool.from_space) + pool.space_size)) {
+        // already copied
+        return obj;
+    }
+    if (obj_ref_type(&obj) == .forwarded) {
+        return @ptrCast(*ObjForwarded, as_obj_header(&obj)).forwarding_addr;
+    }
+    assert(@ptrToInt(pool.to_space) <= obj and obj < (@ptrToInt(pool.to_space) + pool.space_size));
+    const size = obj_size(obj);
+    // std.debug.print("type:{} size:{} copy {*} to {*}\n", .{obj_ref_type(&obj), size, @intToPtr([*] u8, obj), pool.current});
+    @memcpy(pool.current, @intToPtr([*] u8, obj), size);
+    try init_header(as_obj_header(&obj), ObjRefType.forwarded, 0);
+    const forwarding_addr = @intCast(Obj, @ptrToInt(pool.current));
+    @ptrCast(*ObjForwarded, as_obj_header(&obj)).forwarding_addr = forwarding_addr;
+    pool.current += size;
+    return forwarding_addr;
+}
+
+fn start_gc(pool: *ObjPool) ! void {
+    // std.debug.print("gc started from:{*} to:{*}\n", .{pool.from_space, pool.to_space});
+    const tmp = pool.from_space;
+    pool.from_space = pool.to_space;
+    pool.to_space = tmp;
+    pool.current = pool.from_space;
+    for (pool.root.items) |obj_ptr, i| {
+        pool.root.items[i].* = try copy_obj(pool, obj_ptr.*);
+    }
+    for (pool.stack_frames.items) |obj, i| {
+        pool.stack_frames.items[i] = try copy_obj(pool, obj);
+    }
+    for (pool.consts.items) |obj, i| {
+        pool.consts.items[i] = try copy_obj(pool, obj);
+    }
+    pool.current_env = try copy_obj(pool, pool.current_env);
+    var scan_ptr = pool.from_space;
+    while (@ptrToInt(scan_ptr) < @ptrToInt(pool.current)) {
+        const obj = @intCast(Obj, @ptrToInt(scan_ptr));
+        // std.debug.print("scanning {} {*}\n", .{obj_ref_type(&obj), scan_ptr});
+        switch(obj_ref_type(&obj)) {
+            .cons => {
+                const cons = @ptrCast(*ObjConsCell, @intToPtr(*u8, obj));
+                cons.car = try copy_obj(pool,cons.car);
+                cons.cdr = try copy_obj(pool,cons.cdr);
+            },
+            .frame => {
+                const frame = @ptrCast(*ObjFrame, @intToPtr(*u8, obj));
+                frame.vars = try copy_obj(pool,frame.vars);
+                frame.previous = try copy_obj(pool,frame.previous);
+            },
+            .func => {
+                const func = @ptrCast(*ObjFunc, @intToPtr(*u8, obj));
+                func.env = try copy_obj(pool,func.env);
+            },
+            .forwarded => unreachable,
+        }
+        scan_ptr += obj_size(obj);
+    }
+    // std.debug.print("gc finished pool size:{}\n", .{@ptrToInt(pool.current) - @ptrToInt(pool.from_space)});
+}
+
+fn push_root(pool: *ObjPool, obj:* Obj) ! void {
+    try std.ArrayList(*Obj).append(&pool.root, obj);
+}
+fn pop_root(pool: *ObjPool) void {
+    _ = std.ArrayList(*Obj).pop(&pool.root);
 }
 
 pub fn create_symbol_by_id(_: *ObjPool, id: usize) !Obj {
@@ -319,6 +430,10 @@ pub fn create_nil(_: *ObjPool) !Obj {
 }
 
 pub fn create_cons(pool: *ObjPool, car: *Obj, cdr: *Obj) !Obj {
+    try push_root(pool, car);
+    try push_root(pool, cdr);
+    defer pop_root(pool);
+    defer pop_root(pool);
     const cell: *ObjConsCell = try create(pool, ObjConsCell);
     try init_header(&cell.header, ObjRefType.cons, 0);
     cell.car = car.*;
@@ -327,6 +442,10 @@ pub fn create_cons(pool: *ObjPool, car: *Obj, cdr: *Obj) !Obj {
 }
 
 pub fn create_frame(pool: *ObjPool, vars: *Obj, previous: *Obj) !Obj {
+    try push_root(pool, vars);
+    try push_root(pool, previous);
+    defer pop_root(pool);
+    defer pop_root(pool);
     const frame = try create(pool, ObjFrame);
     try init_header(&frame.header, ObjRefType.frame, 0);
     frame.vars = vars.*;
@@ -335,6 +454,8 @@ pub fn create_frame(pool: *ObjPool, vars: *Obj, previous: *Obj) !Obj {
 }
 
 pub fn create_func(pool: *ObjPool, func_id: usize, env: *Obj) !Obj {
+    try push_root(pool, env);
+    defer pop_root(pool);
     const func = try create(pool, ObjFunc);
     try init_header(&func.header, ObjRefType.func, 0);
     func.func_id = func_id;
