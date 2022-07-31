@@ -265,7 +265,8 @@ fn ret_to_previous_func(e: *Evaluator, retval: object.Obj) !void {
 }
 
 fn jmp_to_func(e: *Evaluator, func: object.Obj, args: object.Obj) !void {
-    e.pool.current_env = object.get_func_env(&func);
+    var func_env = object.get_func_env(&func);
+    e.pool.current_env = try object.create_frame(e.pool, &try object.create_nil(e.pool), &func_env);
     e.current_func = @intCast(usize, object.get_func_id(&func));
     e.program_pointer = 0;
     try push_stack(e, args);
