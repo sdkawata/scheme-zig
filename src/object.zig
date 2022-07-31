@@ -373,10 +373,10 @@ fn start_gc(pool: *ObjPool) ! void {
     // std.debug.print("gc finished pool size:{}\n", .{@ptrToInt(pool.current) - @ptrToInt(pool.from_space)});
 }
 
-fn push_root(pool: *ObjPool, obj:* Obj) ! void {
+pub fn push_root(pool: *ObjPool, obj:* Obj) ! void {
     try std.ArrayList(*Obj).append(&pool.root, obj);
 }
-fn pop_root(pool: *ObjPool) void {
+pub fn pop_root(pool: *ObjPool) void {
     _ = std.ArrayList(*Obj).pop(&pool.root);
 }
 

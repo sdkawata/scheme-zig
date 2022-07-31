@@ -264,12 +264,12 @@ fn ret_to_previous_func(e: *Evaluator, retval: object.Obj) !void {
     try push_stack(e, retval);
 }
 
-fn jmp_to_func(e: *Evaluator, func: object.Obj, args: object.Obj) !void {
-    var func_env = object.get_func_env(&func);
+fn jmp_to_func(e: *Evaluator, func: *object.Obj, args: *object.Obj) !void {
+    var func_env = object.get_func_env(func);
     e.pool.current_env = try object.create_frame(e.pool, &try object.create_nil(e.pool), &func_env);
-    e.current_func = @intCast(usize, object.get_func_id(&func));
+    e.current_func = @intCast(usize, object.get_func_id(func));
     e.program_pointer = 0;
-    try push_stack(e, args);
+    try push_stack(e, args.*);
 }
 
 fn pop_stack(e: *Evaluator) object.Obj {
@@ -296,8 +296,12 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 if (e.func_frames.items.len > MAX_RECURSIVE_CALL) {
                     return EvalError.MaxRecursiveCallExceeds;
                 }
-                const args = pop_stack(e);
-                const func = pop_stack(e);
+                var args = pop_stack(e);
+                var func = pop_stack(e);
+                try object.push_root(e.pool, &args);
+                try object.push_root(e.pool, &func);
+                defer object.pop_root(e.pool);
+                defer object.pop_root(e.pool);
                 switch (object.obj_type(&func)) {
                     .buildin => try eval_apply_buildin(e, func, args),
                     .func => {
@@ -307,15 +311,19 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                             .ret_addr = e.program_pointer,
                             .base_stack_pointer = e.pool.stack_frames.items.len,
                         });
-                        try jmp_to_func(e, func, args);
+                        try jmp_to_func(e, &func, &args);
                         continue;
                     },
                     else => return EvalError.IllegalApplication,
                 }
             },
             .tailcall => {
-                const args = pop_stack(e);
-                const func = pop_stack(e);
+                var args = pop_stack(e);
+                var func = pop_stack(e);
+                try object.push_root(e.pool, &args);
+                try object.push_root(e.pool, &func);
+                defer object.pop_root(e.pool);
+                defer object.pop_root(e.pool);
                 switch (object.obj_type(&func)) {
                     .buildin => {
                         try eval_apply_buildin(e, func, args);
@@ -332,7 +340,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                         } else {
                             try std.ArrayList(object.Obj).resize(&e.pool.stack_frames, 0);
                         }
-                        try jmp_to_func(e, func, args);
+                        try jmp_to_func(e, &func, &args);
                         continue;
                     },
                     else => return EvalError.IllegalApplication,
