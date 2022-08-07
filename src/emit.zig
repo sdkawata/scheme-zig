@@ -91,6 +91,34 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
                 codes.items[true_branch_jp].operand = @intCast(i32, codes.items.len);
             }
             return;
+        } else if (std.mem.eql(u8, symbol_val, "and")) {
+            const length = try eval.list_length(cdr);
+            if (length == 0) {
+                try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_true});
+                try emit_tail(e,codes, tail);
+                return;
+            }
+            var jmpAddrs = std.ArrayList(usize).init(e.allocator);
+            defer std.ArrayList(usize).deinit(jmpAddrs);
+            var current_args = cdr;
+            while (object.obj_type(&current_args) != .nil) {
+                const cond = object.get_car(&current_args);
+                if (object.obj_type(&object.get_cdr(&current_args)) != .nil) {
+                    try emit(e, cond, codes, false);
+                    try std.ArrayList(usize).append(&jmpAddrs, codes.items.len);
+                    try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .jmp_if_false});
+                } else {
+                    try emit(e, cond, codes, tail);
+                    try emit_tail(e,codes, tail);
+                }
+                current_args = object.get_cdr(&current_args);
+            }
+            for (jmpAddrs.items) |jmpAddr| {
+                codes.items[jmpAddr].operand = @intCast(i32, codes.items.len);
+            }
+            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_false});
+            try emit_tail(e,codes, tail);
+            return;
         } else if (std.mem.eql(u8, symbol_val, "or")) {
             const length = try eval.list_length(cdr);
             if (length == 0) {
@@ -103,10 +131,12 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
             var current_args = cdr;
             while (object.obj_type(&current_args) != .nil) {
                 const cond = object.get_car(&current_args);
-                try emit(e, cond, codes, false);
                 if (object.obj_type(&object.get_cdr(&current_args)) != .nil) {
+                    try emit(e, cond, codes, false);
                     try std.ArrayList(usize).append(&jmpAddrs, codes.items.len);
                     try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .jmp_if_true_preserve_true});
+                } else {
+                    try emit(e, cond, codes, tail);
                 }
                 current_args = object.get_cdr(&current_args);
             }

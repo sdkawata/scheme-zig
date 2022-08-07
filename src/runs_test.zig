@@ -8,7 +8,7 @@ const format = @import("format.zig");
 
 var output_buf: ?*std.ArrayList(u8) = null;
 fn test_displayer(e:*eval.Evaluator, obj:object.Obj) anyerror!void {
-    const formatted = try format.write(e.pool, obj, std.testing.allocator);
+    const formatted = try format.display(e.pool, obj, std.testing.allocator);
     defer std.testing.allocator.free(formatted);
     try std.fmt.format(output_buf.?.*.writer(), "{s}", .{formatted});
 }
@@ -36,7 +36,6 @@ test "execute test scm files" {
         defer expected_out_file.close();
         const expected = try expected_out_file.readToEndAlloc(allocator, 10000);
         defer allocator.free(expected);
-        const trimed = std.mem.trim(u8, expected, " \n\r");
 
         var current_buf = std.ArrayList(u8).init(allocator);
         defer std.ArrayList(u8).deinit(current_buf);
@@ -63,6 +62,9 @@ test "execute test scm files" {
             }
         } else unreachable;
 
-        try std.testing.expectEqualStrings(trimed, current_buf.items);
+        try std.testing.expectEqualStrings(
+            std.mem.trim(u8, expected, " \n\r"),
+            std.mem.trim(u8, current_buf.items, " \n\r")
+        );
     }
 }
