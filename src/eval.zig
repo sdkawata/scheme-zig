@@ -35,6 +35,7 @@ pub const OpCodeTag = enum(u32) {
     push_new_var_current, // operand: symbol number stack: VAL ->
     set_frame, // operand no stack: FRAME ->
     closure, // operand: compiled_func_id stack: -> CLOSURE
+    discard, // operand: no stack: VAl -> 
     jmp, // operand: addr stack: none
     jmp_if_false, // operand: addr stack: VAL ->
     jmp_if_true_preserve_true, // operand: addr stack: if (VAL) { VAL -> VAL } else {VAL -> }
@@ -464,6 +465,9 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                     return retval;
                 }
                 try ret_to_previous_func(e, retval);
+            },
+            .discard => {
+                _ = pop_stack(e);
             },
             .jmp => {
                 const ptr = @intCast(usize, current_opcode.operand);

@@ -144,6 +144,26 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
             const body = eval.list_2nd(cdr);
             try emit(e, body, codes, tail);
             return;
+        } else if (std.mem.eql(u8, symbol_val, "begin")) {
+            if (object.obj_type(&cdr) == .nil) {
+                try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_undef});
+                try emit_tail(e,codes, tail);
+            } else {
+                var current = cdr;
+                while (object.obj_type(&current) != .nil) {
+                    const expr = object.get_car(&current);
+                    if (object.obj_type(&object.get_cdr(&current)) == .nil) {
+                        // last element
+                        try emit(e, expr, codes, tail);
+                        try emit_tail(e,codes, tail);
+                    } else {
+                        try emit(e, expr, codes, false);
+                        try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .discard});
+                    }
+                    current = object.get_cdr(&current);
+                }
+            }
+            return;
         } else if (std.mem.eql(u8, symbol_val, "letrec")) {
             const length = try eval.list_length(cdr);
             if (length != 2) {

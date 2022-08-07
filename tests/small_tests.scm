@@ -25,6 +25,7 @@
     (((lambda (x y) (+ x y)) 1 2) 3)
     ((let ((f (lambda (x) (lambda (y) (+ x y))))) ((f 1) 2)) 3) ;lambda has lexical scope
     ((+ 3 (letrec ((x 1)) (+ 1 x))) 5) ;non-tail-poision letrec
+    ((begin 1 2) 2)
     ((letrec
         ((
             sum
