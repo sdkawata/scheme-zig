@@ -1,4 +1,5 @@
 const object = @import("object.zig");
+const format = @import("format.zig");
 const std = @import("std");
 
 const EvalError  = error {
@@ -61,6 +62,7 @@ pub const Evaluator = struct {
     func_frames: std.ArrayList(FuncFrame),
     program_pointer: usize,
     current_func: usize,
+    displayer: fn(*Evaluator, object.Obj)anyerror!void,
 };
 
 const BuildinFunc = enum(i32) {
@@ -71,6 +73,7 @@ const BuildinFunc = enum(i32) {
     cdr,
     minus,
     cons,
+    display,
 };
 
 const MAX_RECURSIVE_CALL = 100;
@@ -94,9 +97,11 @@ pub fn create_evaluator(allocator: std.mem.Allocator) !*Evaluator {
     try push_buildin_func(pool, &g, "cdr", .cdr);
     try push_buildin_func(pool, &g, "-", .minus);
     try push_buildin_func(pool, &g, "cons", .cons);
+    try push_buildin_func(pool, &g, "display", .display);
     evaluator.allocator = allocator;
     evaluator.compiled_funcs = std.ArrayList(CompiledFunc).init(allocator);
     evaluator.func_frames = std.ArrayList(FuncFrame).init(allocator);
+    evaluator.displayer = debug_displayer;
     return evaluator;
 }
 
@@ -124,7 +129,23 @@ fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)any
         .cdr => apply_cdr,
         .minus => apply_minus,
         .cons => apply_cons,
+        .display => apply_display,
     };
+}
+
+fn debug_displayer(e:*Evaluator, obj: object.Obj) anyerror!void {
+    const formatted = try format.format(e.pool, obj, e.allocator);
+    defer e.allocator.free(formatted);
+    std.debug.print("{s}", .{formatted});
+}
+
+fn apply_display(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
+    if ((try list_length(s)) != 1) {
+        std.debug.print("display expect 1 args but got {}\n", .{try list_length(s)});
+        return EvalError.IllegalParameter;
+    }
+    try e.displayer(e, list_1st(s));
+    return object.create_undef(e.pool);
 }
 
 fn apply_plus(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {

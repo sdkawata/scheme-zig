@@ -30,4 +30,4 @@
                             (rec (+ cy 1) (cons (cons cx (cons cy (quote ()))) acc))))
                     (range 0 n))))))
             (rec 0 (quote ())))))
-(nqueen 8)
+(display (nqueen 8))

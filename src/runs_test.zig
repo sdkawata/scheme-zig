@@ -6,6 +6,14 @@ const object = @import("object.zig");
 const format = @import("format.zig");
 
 
+var output_buf: ?*std.ArrayList(u8) = null;
+fn test_displayer(e:*eval.Evaluator, obj:object.Obj) anyerror!void {
+    const formatted = try format.format(e.pool, obj, std.testing.allocator);
+    defer std.testing.allocator.free(formatted);
+    try std.fmt.format(output_buf.?.*.writer(), "{s}", .{formatted});
+}
+
+
 test "execute test scm files" {
     const allocator = std.testing.allocator;
     const dir = try std.fs.cwd().openDir("./tests/runs", .{.iterate = true});
@@ -30,26 +38,31 @@ test "execute test scm files" {
         defer allocator.free(expected);
         const trimed = std.mem.trim(u8, expected, " \n\r");
 
+        var current_buf = std.ArrayList(u8).init(allocator);
+        defer std.ArrayList(u8).deinit(current_buf);
+        output_buf = &current_buf;
+
         // std.debug.print("testing {s}\n", .{path.name});
         const evaluator = try eval.create_evaluator(allocator);
         defer eval.destroy_evaluator(evaluator);
+        evaluator.displayer = test_displayer;
         var p = parser.Parser{.s = content, .p = 0};
-        var evaled = while(true) {
+        while(true) {
             const obj = try parser.parse(&p, evaluator.pool);
             const emitted_idx = emit.emit_func(evaluator, obj, try object.create_nil(evaluator.pool)) catch |err| {
                 std.debug.print("error occurred while emmiting code for {s}\n", .{name});
                 return err;
             };
-            const evaled = eval.eval_compiled_global(evaluator, emitted_idx) catch |err| {
+            _ = eval.eval_compiled_global(evaluator, emitted_idx) catch |err| {
                 std.debug.print("error occurred while executing {s}\n", .{name});
                 return err;
             };
             try parser.skip_whitespaces(&p);
             if (! parser.is_char_left(&p)) {
-                break evaled;
+                break;
             }
         } else unreachable;
 
-        try format.expectFormatEqual(evaluator.pool, trimed, evaled);
+        try std.testing.expectEqualStrings(trimed, current_buf.items);
     }
 }

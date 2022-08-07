@@ -60,7 +60,7 @@ pub fn debug_println_obj(pool: *object.ObjPool, obj: object.Obj) void {
         std.debug.print("!!format error!!\n", .{});
         return;
     };
-    // defer allocator.free(formatted);
+    defer allocator.free(formatted);
     std.debug.print("{s}\n", .{formatted});
 }
 
