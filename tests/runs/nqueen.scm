@@ -13,6 +13,13 @@
         (if (null? l)
             #f
             (if (f (car l)) #t (any f (cdr l))))))
+(define each
+    (lambda (f l)
+        (if (null? l)
+            #f
+            (begin
+                (f (car l))
+                (each f (cdr l))))))
 (define nqueen
     (lambda (n)
         (letrec ((rec (lambda (cy acc)
@@ -30,4 +37,17 @@
                             (rec (+ cy 1) (cons (cons cx (cons cy (quote ()))) acc))))
                     (range 0 n))))))
             (rec 0 (quote ())))))
-(display (nqueen 8))
+(define display_result (lambda (n result) 
+    (each 
+        (lambda (cy) 
+            (begin
+                (each
+                    (lambda (cx)
+                        (if 
+                            (any (lambda (pair) (and (= cx (car pair)) (= cy (car (cdr pair))))) result)
+                            (display #\o)
+                            (display #\.)))
+                    (range 0 n))
+                (display #\newline)))
+        (range 0 n))))
+(display_result 8 (nqueen 8))

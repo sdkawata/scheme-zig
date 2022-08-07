@@ -129,8 +129,8 @@ fn parse_char(p: *Parser, pool: *object.ObjPool) anyerror!object.Obj {
             if (std.mem.eql(u8, char_name, special_char[1])) {
                 return try object.create_char(pool, special_char[0]);
             }
-            return ParseError.UnexpectedToken;
         }
+        return ParseError.UnexpectedToken;
     }
     return ParseError.UnexpectedToken;
 }
