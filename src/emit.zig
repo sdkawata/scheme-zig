@@ -91,6 +91,30 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
                 codes.items[true_branch_jp].operand = @intCast(i32, codes.items.len);
             }
             return;
+        } else if (std.mem.eql(u8, symbol_val, "or")) {
+            const length = try eval.list_length(cdr);
+            if (length == 0) {
+                try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_false});
+                try emit_tail(e,codes, tail);
+                return;
+            }
+            var jmpAddrs = std.ArrayList(usize).init(e.allocator);
+            defer std.ArrayList(usize).deinit(jmpAddrs);
+            var current_args = cdr;
+            while (object.obj_type(&current_args) != .nil) {
+                const cond = object.get_car(&current_args);
+                try emit(e, cond, codes, false);
+                if (object.obj_type(&object.get_cdr(&current_args)) != .nil) {
+                    try std.ArrayList(usize).append(&jmpAddrs, codes.items.len);
+                    try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .jmp_if_true_preserve_true});
+                }
+                current_args = object.get_cdr(&current_args);
+            }
+            for (jmpAddrs.items) |jmpAddr| {
+                codes.items[jmpAddr].operand = @intCast(i32, codes.items.len);
+            }
+            try emit_tail(e,codes, tail);
+            return;
         } else if (std.mem.eql(u8, symbol_val, "let")) {
             const length = try eval.list_length(cdr);
             if (length != 2) {
@@ -235,6 +259,6 @@ pub fn emit_func(e: *eval.Evaluator, s: object.Obj, args: object.Obj) !usize {
     try std.ArrayList(eval.CompiledFunc).append(&e.compiled_funcs, eval.CompiledFunc {
         .codes = std.ArrayList(eval.OpCode).toOwnedSlice(&codes),
     });
-    // debug_print_func(e, idx);
+    // eval.debug_print_func(e, idx);
     return idx;
 }

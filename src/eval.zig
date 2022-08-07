@@ -35,6 +35,7 @@ pub const OpCodeTag = enum(u32) {
     closure, // operand: compiled_func_id stack: -> CLOSURE
     jmp, // operand: addr stack: none
     jmp_if_false, // operand: addr stack: VAL ->
+    jmp_if_true_preserve_true, // operand: addr stack: if (VAL) { VAL -> VAL } else {VAL -> }
 };
 
 pub const OpCode = packed struct {
@@ -448,6 +449,15 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 const ptr = @intCast(usize, current_opcode.operand);
                 const val = pop_stack(e);
                 if (object.obj_type(&val) == .b_false) {
+                    e.program_pointer = ptr;
+                    continue;
+                }
+            },
+            .jmp_if_true_preserve_true => {
+                const ptr = @intCast(usize, current_opcode.operand);
+                const val = pop_stack(e);
+                if (object.obj_type(&val) != .b_false) {
+                    try push_stack(e, val);
                     e.program_pointer = ptr;
                     continue;
                 }

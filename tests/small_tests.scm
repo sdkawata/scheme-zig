@@ -8,6 +8,10 @@
     ((+ 3 (let ((x 1)) (+ 1 x))) 5) ;non-tail-poision let
     ((= 3 4) #f)
     ((= 4 4) #t)
+    ((or) #f)
+    ((or (= 1 1) (no_such_symbol)) #t)
+    ((or #f #f (+ 1 1)) 2)
+    ((+ (or 1) 1) 2) ; non-tail-position or
     ((null? (quote ())) #t)
     ((null? 3) #f)
     ((- (- 3 1) 1) 1)
