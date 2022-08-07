@@ -24,6 +24,7 @@ pub const OpCodeTag = enum(u32) {
     dup_car, // operand: no stack: CONS -> CONS CAR
     dup_cdr, // operand: no stack: CONS -> CONS CDR
     push_number, // operand: number stack: -> NUMBER
+    push_char, //operand: number stack: -> CHAR
     push_true, //operand no stack: -> TRUE
     push_false, //operand no stack: -> FALSE
     push_nil, //operand no stack: -> NIL
@@ -134,7 +135,7 @@ fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)any
 }
 
 fn debug_displayer(e:*Evaluator, obj: object.Obj) anyerror!void {
-    const formatted = try format.format(e.pool, obj, e.allocator);
+    const formatted = try format.display(e.pool, obj, e.allocator);
     defer e.allocator.free(formatted);
     std.debug.print("{s}", .{formatted});
 }
@@ -413,6 +414,9 @@ fn eval_loop(e: *Evaluator) !object.Obj {
             },
             .push_number => {
                 try push_stack(e, try object.create_number(e.pool, current_opcode.operand));
+            },
+            .push_char => {
+                try push_stack(e, try object.create_char(e.pool, @intCast(u8, current_opcode.operand)));
             },
             .push_true => {
                 try push_stack(e, try object.create_true(e.pool));

@@ -11,6 +11,7 @@ pub const Obj = u64;
 // type false value:none
 // type nil value: none
 // type number(32bit) value: number
+// type char(8bit ASCII only) value:number
 // type buildin value: number which meaning is given by executor
 // type symbol value: symbol id
 // memory layout
@@ -52,6 +53,7 @@ const ObjValueType = enum(u16) {
     b_true,
     b_false,
     number_i32,
+    char,
     nil,
     buildin,
     symbol,
@@ -70,6 +72,7 @@ pub const ObjType =  enum(u32) {
     b_false,
     undef,
     number,
+    char,
     cons,
     nil,
     symbol,
@@ -128,6 +131,7 @@ pub fn obj_type (obj: * const Obj) ObjType {
             .undef => .undef,
             .nil => .nil,
             .number_i32 => .number,
+            .char => .char,
             .buildin => .buildin,
             .symbol => .symbol,
         };
@@ -154,6 +158,12 @@ pub fn as_number(obj: * const Obj) i32 {
     assert(is_value(obj) and obj_value_type(obj) == .number_i32);
     return obj_value(obj);
 }
+
+pub fn get_char_value(obj: * const Obj) u8 {
+    assert(is_value(obj) and obj_value_type(obj) == .char);
+    return @intCast(u8, obj_value(obj));
+}
+
 pub fn get_buildin_value(obj: * const Obj) i32 {
     assert(is_value(obj) and obj_value_type(obj) == .buildin);
     return obj_value(obj);
@@ -421,6 +431,10 @@ pub fn create_number(_: *ObjPool, n: i32) !Obj {
     return create_value(ObjValueType.number_i32, n);
 }
 
+pub fn create_char(_: *ObjPool, n: u8) !Obj {
+    return create_value(ObjValueType.char, @intCast(i32, n));
+}
+
 pub fn create_opaque(_: *ObjPool, n: i32) !Obj {
     return create_value(ObjValueType.buildin, n);
 }
@@ -478,6 +492,8 @@ pub fn equal(obj1: * const Obj, obj2: * const Obj) bool {
         return true;
     } else if (type1 == .number and type2 == .number) {
         return as_number(obj1) == as_number(obj2);
+    } else if (type1 == .char and type2 == .char) {
+        return get_char_value(obj1) == get_char_value(obj2);
     }
     return false;
 }

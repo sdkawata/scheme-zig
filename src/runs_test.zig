@@ -8,7 +8,7 @@ const format = @import("format.zig");
 
 var output_buf: ?*std.ArrayList(u8) = null;
 fn test_displayer(e:*eval.Evaluator, obj:object.Obj) anyerror!void {
-    const formatted = try format.format(e.pool, obj, std.testing.allocator);
+    const formatted = try format.write(e.pool, obj, std.testing.allocator);
     defer std.testing.allocator.free(formatted);
     try std.fmt.format(output_buf.?.*.writer(), "{s}", .{formatted});
 }
@@ -16,7 +16,7 @@ fn test_displayer(e:*eval.Evaluator, obj:object.Obj) anyerror!void {
 
 test "execute test scm files" {
     const allocator = std.testing.allocator;
-    const dir = try std.fs.cwd().openDir("./tests/runs", .{.iterate = true});
+    const dir = try std.fs.cwd().openIterableDir("./tests/runs", .{});
     var dir_iterator = dir.iterate();
     while (try dir_iterator.next()) |path| {
         if (!std.mem.eql(u8, ".scm", path.name[path.name.len-4..path.name.len])) {

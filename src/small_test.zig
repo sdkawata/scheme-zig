@@ -26,9 +26,9 @@ test "execute small test" {
             std.debug.print("illegal test file: input is not list\n", .{});
             return TestError.Error;
         }
-        const expr_str = try format.format(global_pool, object.get_car(&object.get_car(&current)), allocator);
+        const expr_str = try format.write(global_pool, object.get_car(&object.get_car(&current)), allocator);
         defer allocator.free(expr_str);
-        const expected_str = try format.format(global_pool, object.get_car(&object.get_cdr(&object.get_car(&current))), allocator);
+        const expected_str = try format.write(global_pool, object.get_car(&object.get_cdr(&object.get_car(&current))), allocator);
         defer allocator.free(expected_str);
 
         const evaluator = try eval.create_evaluator(allocator);
@@ -50,11 +50,11 @@ test "execute small test" {
             return err;
         };
         if (! object.equal(&expected, &result)) {
-            const formatted = try format.format(evaluator.pool, expr, allocator);
+            const formatted = try format.write(evaluator.pool, expr, allocator);
             defer allocator.free(formatted);
-            const result_formatted = try format.format(evaluator.pool, result, allocator);
+            const result_formatted = try format.write(evaluator.pool, result, allocator);
             defer allocator.free(result_formatted);
-            const expected_formatted = try format.format(evaluator.pool, expected, allocator);
+            const expected_formatted = try format.write(evaluator.pool, expected, allocator);
             defer allocator.free(expected_formatted);
             std.debug.print("eval error mismatch while evaling:{s}\n", .{formatted});
             std.debug.print("expected:{s}\n", .{expected_formatted});

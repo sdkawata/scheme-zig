@@ -15,6 +15,13 @@ pub const Parser = struct {
     p: usize,
 };
 
+const SpecialCharPair = std.meta.Tuple(&.{u8, []const u8});
+
+pub const special_chars = [_]SpecialCharPair{
+    .{' ', "space"},
+    .{'\n', "newline"},
+};
+
 fn peek(p: *Parser, offset: usize) PeekError!u8 {
     if (p.s.len <= (p.p + offset)) {
         return PeekError.EOF;
@@ -99,6 +106,35 @@ fn parse_simple_symbol(p: *Parser, pool: *object.ObjPool, start_pos: usize) anye
     return try object.create_symbol(pool, p.s[start_pos..p.p]);
 }
 
+fn parse_char(p: *Parser, pool: *object.ObjPool) anyerror!object.Obj {
+    const start_pos = p.p;
+    const peeked = try peek(p,0);
+    if (peeked >= 'a' and peeked <= 'z') {
+        while (true) {
+            const current_peeked = peek(p,0) catch 0;
+            if (current_peeked >= 'a' and current_peeked <= 'z') {
+                p.p+=1;
+            } else {
+                break;
+            }
+        }
+    } else {
+        p.p+=1;
+    }
+    const char_name = p.s[start_pos..p.p];
+    if (char_name.len == 1) {
+        return try object.create_char(pool, char_name[0]);
+    } else {
+        for (special_chars) |special_char| {
+            if (std.mem.eql(u8, char_name, special_char[1])) {
+                return try object.create_char(pool, special_char[0]);
+            }
+            return ParseError.UnexpectedToken;
+        }
+    }
+    return ParseError.UnexpectedToken;
+}
+
 fn parse_datum(p:*Parser, pool: *object.ObjPool) anyerror!object.Obj {
     const peeked = try peek(p, 0);
     if (peeked == '#') {
@@ -110,6 +146,10 @@ fn parse_datum(p:*Parser, pool: *object.ObjPool) anyerror!object.Obj {
             'f' => {
                 p.p+=2;
                 return object.create_false(pool);
+            },
+            '\\' => {
+                p.p+=2;
+                return try parse_char(p, pool);
             },
             else => return ParseError.UnexpectedToken,
         }
@@ -169,19 +209,16 @@ test "parse true & false" {
     try std.testing.expectEqual(object.ObjType.b_false, object.obj_type(&v_false));
 }
 
-test "parse number" {
+test "parse char" {
     const allocator: std.mem.Allocator = std.testing.allocator;
     const pool = try object.create_obj_pool(allocator);
     defer object.destroy_obj_pool(pool);
-    const number: object.Obj = try parse_string("42", pool);
-    try std.testing.expectEqual(object.ObjType.number, object.obj_type(&number));
-    try std.testing.expectEqual(@intCast(i32, 42), object.as_number(&number));
-    const number2: object.Obj = try parse_string("+42", pool);
-    try std.testing.expectEqual(object.ObjType.number, object.obj_type(&number2));
-    try std.testing.expectEqual(@intCast(i32, 42), object.as_number(&number2));
-    const number3: object.Obj = try parse_string("-42", pool);
-    try std.testing.expectEqual(object.ObjType.number, object.obj_type(&number3));
-    try std.testing.expectEqual(@intCast(i32, -42), object.as_number(&number3));
+    const char_a: object.Obj = try parse_string("#\\a", pool);
+    try std.testing.expectEqual(object.ObjType.char, object.obj_type(&char_a));
+    try std.testing.expectEqual(@intCast(u8, 'a'), object.get_char_value(&char_a));
+    const char_space: object.Obj = try parse_string("#\\space", pool);
+    try std.testing.expectEqual(object.ObjType.char, object.obj_type(&char_space));
+    try std.testing.expectEqual(@intCast(u8, ' '), object.get_char_value(&char_space));
 }
 
 test "parse number with comment" {
