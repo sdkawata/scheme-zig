@@ -1,10 +1,12 @@
 (
     ((+ 1 2 3) 6)
     ((+ (+ 8 13) 9 (+ 2 10)) 42)
+    ((- 10 1) 9)
+    ((- 1 10) -9)
     ((if #t (+ 1 2) (no_such_symbol)) 3)
     ((if #f (no_such_symbol) (+ 2 2)) 4)
     ((+ 3 (if #t 3 4)) 6) ; non-tail-position if
-    ((let ((x (+2 2))) (let ((x x)) x)) 4)
+    ((let ((x (+ 2 2))) (let ((x x)) x)) 4)
     ((+ 3 (let ((x 1)) (+ 1 x))) 5) ;non-tail-poision let
     ((= 3 4) #f)
     ((= 4 4) #t)

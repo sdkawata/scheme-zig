@@ -46,13 +46,13 @@ pub fn skip_whitespaces(p: *Parser) !void {
     }
 }
 
-fn parse_number(p: *Parser, pool: *object.ObjPool) !object.Obj {
+fn parse_number(p: *Parser, pool: *object.ObjPool, sign: i32) !object.Obj {
     var val: i32 = 0;
     while(p.s.len > p.p and p.s[p.p] >= '0' and p.s[p.p] <= '9') {
         val = val * 10 + (p.s[p.p] - '0');
         p.p+=1;
     }
-    return try object.create_number(pool, val);
+    return try object.create_number(pool, val * sign);
 }
 
 fn parse_list(p: *Parser, pool: *object.ObjPool) anyerror!object.Obj {
@@ -114,7 +114,7 @@ fn parse_datum(p:*Parser, pool: *object.ObjPool) anyerror!object.Obj {
             else => return ParseError.UnexpectedToken,
         }
     } else if (peeked >= '0' and peeked <= '9') {
-        return try parse_number(p, pool);
+        return try parse_number(p, pool, 1);
     } else if (peeked == '(') {
         p.p+=1;
         try skip_whitespaces(p);
@@ -128,11 +128,16 @@ fn parse_datum(p:*Parser, pool: *object.ObjPool) anyerror!object.Obj {
         p.p+=1;
         return try parse_simple_symbol(p, pool, start_pos);
     } else if ((peeked == '+' or peeked == '-')) {
-        // TODO parse +100 and -100
-        const symbol = object.create_symbol(pool, p.s[p.p..p.p+1]);
-        p.p+=1;
-        try skip_whitespaces(p);
-        return symbol;
+        const next = peek(p, 1) catch 0;
+        if ('0' <= next and next <= '9') {
+           p.p+=1;
+           return try parse_number(p, pool, if (peeked == '+') 1 else -1);
+        } else {
+            const symbol = object.create_symbol(pool, p.s[p.p..p.p+1]);
+            p.p+=1;
+            try skip_whitespaces(p);
+            return symbol;
+        }
     }
     std.debug.print("unexpected token pos:{} token:{}\n", .{p.p, peeked});
     return ParseError.UnexpectedToken;
@@ -171,6 +176,12 @@ test "parse number" {
     const number: object.Obj = try parse_string("42", pool);
     try std.testing.expectEqual(object.ObjType.number, object.obj_type(&number));
     try std.testing.expectEqual(@intCast(i32, 42), object.as_number(&number));
+    const number2: object.Obj = try parse_string("+42", pool);
+    try std.testing.expectEqual(object.ObjType.number, object.obj_type(&number2));
+    try std.testing.expectEqual(@intCast(i32, 42), object.as_number(&number2));
+    const number3: object.Obj = try parse_string("-42", pool);
+    try std.testing.expectEqual(object.ObjType.number, object.obj_type(&number3));
+    try std.testing.expectEqual(@intCast(i32, -42), object.as_number(&number3));
 }
 
 test "parse number with comment" {

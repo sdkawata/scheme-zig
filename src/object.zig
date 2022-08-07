@@ -143,7 +143,7 @@ pub fn obj_type (obj: * const Obj) ObjType {
 
 fn obj_value(obj: * const Obj) i32 {
     assert(is_value(obj));
-    return @intCast(i32, obj.* >> 32);
+    return @bitCast(i32, @intCast(u32, obj.* >> 32));
 }
 
 fn obj_ref_value(header: *ObjHeader) i32 {
@@ -402,7 +402,7 @@ fn init_header(header:*ObjHeader, o_type: ObjRefType, value: i32) !void {
 }
 
 pub fn create_value(o_type: ObjValueType, value: i32) Obj {
-    return (@intCast(u64, value) << 32) + (@intCast(u64, @enumToInt(o_type)) << 16) + 1;
+    return (@intCast(u64, @bitCast(u32, value)) << 32) + (@intCast(u64, @enumToInt(o_type)) << 16) + 1;
 }
 
 pub fn create_true(_: *ObjPool) !Obj {
