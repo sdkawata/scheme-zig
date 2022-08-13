@@ -26,6 +26,27 @@ fn emit_closure(e: *eval.Evaluator, args: object.Obj, body: object.Obj, codes: *
     return;
 }
 
+fn emit_begin(e: *eval.Evaluator, s: object.Obj, codes:*std.ArrayList(eval.OpCode), tail: bool) anyerror!void {
+    if (object.obj_type(&s) == .nil) {
+        try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_undef});
+        try emit_tail(e,codes, tail);
+    } else {
+        var current = s;
+        while (object.obj_type(&current) != .nil) {
+            const expr = object.get_car(&current);
+            if (object.obj_type(&object.get_cdr(&current)) == .nil) {
+                // last element
+                try emit(e, expr, codes, tail);
+                try emit_tail(e,codes, tail);
+            } else {
+                try emit(e, expr, codes, false);
+                try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .discard});
+            }
+            current = object.get_cdr(&current);
+        }
+    }
+}
+
 fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCode), tail: bool) anyerror!void {
     const car = object.get_car(&s);
     const cdr = object.get_cdr(&s);
@@ -58,7 +79,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
             } else {
                 return EmitError.MalformError;
             }
-            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .define, .operand = @intCast(i32, object.get_symbol_id(&key))});
+            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_new_var_current, .operand = @intCast(i32, object.get_symbol_id(&key))});
             try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_undef});
             try emit_tail(e, codes, tail);
             return;
@@ -182,28 +203,13 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
                 current_binds = object.get_cdr(&current_binds);
             }
             try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .set_frame});
-            const body = eval.list_2nd(cdr);
-            try emit(e, body, codes, tail);
+            try emit_begin(e, object.get_cdr(&cdr), codes, tail);
+            if (! tail) {
+                try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .set_frame_previous});
+            }
             return;
         } else if (std.mem.eql(u8, symbol_val, "begin")) {
-            if (object.obj_type(&cdr) == .nil) {
-                try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_undef});
-                try emit_tail(e,codes, tail);
-            } else {
-                var current = cdr;
-                while (object.obj_type(&current) != .nil) {
-                    const expr = object.get_car(&current);
-                    if (object.obj_type(&object.get_cdr(&current)) == .nil) {
-                        // last element
-                        try emit(e, expr, codes, tail);
-                        try emit_tail(e,codes, tail);
-                    } else {
-                        try emit(e, expr, codes, false);
-                        try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .discard});
-                    }
-                    current = object.get_cdr(&current);
-                }
-            }
+            try emit_begin(e, cdr, codes, tail);
             return;
         } else if (std.mem.eql(u8, symbol_val, "letrec")) {
             const length = try eval.list_length(cdr);
@@ -239,8 +245,10 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
                 try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_new_var_current, .operand=@intCast(i32, symbol_id)});
                 current_binds = object.get_cdr(&current_binds);
             }
-            const body = eval.list_2nd(cdr);
-            try emit(e, body, codes, tail);
+            try emit_begin(e, object.get_cdr(&cdr), codes, tail);
+            if (! tail) {
+                try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .set_frame_previous});
+            }
             return;
         }
     }
@@ -325,5 +333,6 @@ pub fn emit_func(e: *eval.Evaluator, s: object.Obj, args: object.Obj) !usize {
         .codes = std.ArrayList(eval.OpCode).toOwnedSlice(&codes),
     });
     // eval.debug_print_func(e, idx);
+    // eval.debug_print_symbols(e);
     return idx;
 }

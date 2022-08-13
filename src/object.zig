@@ -192,6 +192,20 @@ pub fn get_cdr(obj: * const Obj) Obj {
     return consCell.cdr;
 }
 
+pub fn set_car(obj: * const Obj, val: * const Obj) void {
+    assert(!is_value(obj) and obj_ref_type(obj) == .cons);
+    const header = as_obj_header(obj);
+    const consCell = @ptrCast(*ObjConsCell, header);
+    consCell.car = val.*;
+}
+ 
+pub fn set_cdr(obj: * const Obj, val: * const Obj) void {
+    assert(!is_value(obj) and obj_ref_type(obj) == .cons);
+    const header = as_obj_header(obj);
+    const consCell = @ptrCast(*ObjConsCell, header);
+    consCell.cdr = val.*;
+}
+
 pub fn get_func_id(obj: * const Obj) Obj {
     assert(!is_value(obj) and obj_ref_type(obj) == .func);
     const header = as_obj_header(obj);
@@ -243,6 +257,24 @@ pub fn lookup_frame(obj: * const Obj, symbol_id: usize) !Obj {
             const varPair = get_car(&currentVars);
             if (symbol_id == get_symbol_id(&get_car(&varPair))) {
                 return get_cdr(&varPair);
+            }
+            currentVars = get_cdr(&currentVars);
+        }
+        currentFrame = get_frame_previous(&currentFrame);
+    }
+    return LookUpError.NotFound;
+}
+
+pub fn set_frame_var(obj: * const Obj, symbol_id: usize, val: * const Obj) !void {
+    assert(!is_value(obj) and obj_ref_type(obj) == .frame);
+    var currentFrame = obj.*;
+    while (obj_type(&currentFrame) != .nil) {
+        var currentVars = get_frame_vars(&currentFrame);
+        while (obj_type(&currentVars) != .nil) {
+            const varPair = get_car(&currentVars);
+            if (symbol_id == get_symbol_id(&get_car(&varPair))) {
+                set_cdr(&varPair, val);
+                return; 
             }
             currentVars = get_cdr(&currentVars);
         }

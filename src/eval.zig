@@ -17,7 +17,7 @@ pub const OpCodeTag = enum(u32) {
     call, // operand: no stack: FUNC, ARGS -> RET
     tailcall, // operand: no stack: FUNC, ARGS -> RET
     lookup, // operand: symbol number stack: -> VAL
-    define, // operand: symbol number stack: VAL ->
+    set_var, // operand symbol number stack: VAL ->
     cons, // operand: no stack: CAR CDR -> CONS
     car, // operand: no stack: CONS -> CAR
     cdr, // operand: no stack: CONS -> CDR
@@ -34,6 +34,7 @@ pub const OpCodeTag = enum(u32) {
     push_new_var, // operand: symbol number stack: FRAME VAL -> FRAME
     push_new_var_current, // operand: symbol number stack: VAL ->
     set_frame, // operand no stack: FRAME ->
+    set_frame_previous, // operand: no stack: none
     closure, // operand: compiled_func_id stack: -> CLOSURE
     discard, // operand: no stack: VAl -> 
     jmp, // operand: addr stack: none
@@ -402,12 +403,6 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                     val
                 );
             },
-            .define => {
-                var val = pop_stack(e);
-                var key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
-                try object.push_frame_var(e.pool, &globals(e), &key, &val);
-                try push_stack(e, try object.create_undef(e.pool));
-            },
             .cons => {
                 var cdr = pop_stack(e);
                 var car = pop_stack(e);
@@ -470,10 +465,19 @@ fn eval_loop(e: *Evaluator) !object.Obj {
                 var key = try object.create_symbol_by_id(e.pool, @intCast(usize, current_opcode.operand));
                 try object.push_frame_var(e.pool, &e.pool.current_env, &key, &val);
             },
+            .set_var => {
+                var val = pop_stack(e);
+                var symbol_id = @intCast(usize, current_opcode.operand);
+                try object.set_frame_var(&e.pool.current_env, symbol_id, &val);
+            },
             .set_frame => {
                 const frame = pop_stack(e);
                 std.debug.assert(object.obj_type(&frame) == .frame);
                 e.pool.current_env = frame;
+            },
+            .set_frame_previous => {
+                const prev_frame = object.get_frame_previous(&e.pool.current_env);
+                e.pool.current_env = prev_frame;
             },
             .closure => {
                 const function_id = @intCast(usize, current_opcode.operand);
@@ -525,6 +529,14 @@ pub fn debug_print_func(e: *Evaluator, func_id: usize) void {
         std.debug.print("p={} {}\n", .{i, code});
     }
     std.debug.print("==end function {}==\n", .{func_id});
+}
+
+pub fn debug_print_symbols(e: *Evaluator) void {
+    std.debug.print("==symbol table==\n", .{});
+    for (e.pool.symbol_table.items) |symbol, i| {
+        std.debug.print("i={} {s}\n", .{i, symbol});
+    }
+    std.debug.print("==end symbol table==\n", .{});
 }
 
 pub fn eval_compiled_global(e: *Evaluator, func_no: usize) !object.Obj {
