@@ -19,6 +19,13 @@ fn emit_create_list(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eva
     try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .cons});
 }
 
+fn emit_closure(e: *eval.Evaluator, args: object.Obj, body: object.Obj, codes: *std.ArrayList(eval.OpCode), tail: bool) anyerror!void {
+    const func_id = try emit_func(e, body, args);
+    try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .closure, .operand = @intCast(i32, func_id)});
+    try emit_tail(e, codes, tail);
+    return;
+}
+
 fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCode), tail: bool) anyerror!void {
     const car = object.get_car(&s);
     const cdr = object.get_cdr(&s);
@@ -39,12 +46,18 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
                 std.debug.print("define expect 2 args but got {}\n", .{try eval.list_length(cdr)});
                 return EmitError.MalformError;
             }
-            const key =eval.list_1st(cdr);
-            if (object.obj_type(&key) != .symbol) {
+            var key = eval.list_1st(cdr);
+            if (object.obj_type(&key) == .symbol) {
+                const body = eval.list_2nd(cdr);
+                try emit(e, body, codes, false);
+            } else if (object.obj_type(&key) == .cons) {
+                const args = object.get_cdr(&key);
+                key = object.get_car(&key);
+                const body = eval.list_2nd(cdr);
+                try emit_closure(e, args, body, codes, false);
+            } else {
                 return EmitError.MalformError;
             }
-            const body = eval.list_2nd(cdr);
-            try emit(e, body, codes, false);
             try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .define, .operand = @intCast(i32, object.get_symbol_id(&key))});
             try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_undef});
             try emit_tail(e, codes, tail);
@@ -56,9 +69,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
             }
             const args = eval.list_1st(cdr);
             const body = eval.list_2nd(cdr);
-            const func_id = try emit_func(e, body, args);
-            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .closure, .operand = @intCast(i32, func_id)});
-            try emit_tail(e, codes, tail);
+            try emit_closure(e, args, body, codes, tail);
             return;
         } else if (std.mem.eql(u8, symbol_val, "if")) {
             const length = try eval.list_length(cdr);

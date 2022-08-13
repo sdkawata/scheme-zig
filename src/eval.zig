@@ -69,6 +69,7 @@ pub const Evaluator = struct {
 
 const BuildinFunc = enum(i32) {
     plus,
+    multiply,
     equal,
     null_p,
     car,
@@ -93,6 +94,7 @@ pub fn create_evaluator(allocator: std.mem.Allocator) !*Evaluator {
     var g = try object.create_frame(evaluator.pool, &nil, &nil);
     try std.ArrayList(object.Obj).append(&evaluator.pool.consts, g);
     try push_buildin_func(pool, &g, "+", .plus);
+    try push_buildin_func(pool, &g, "*", .multiply);
     try push_buildin_func(pool, &g, "=", .equal);
     try push_buildin_func(pool, &g, "null?", .null_p);
     try push_buildin_func(pool, &g, "car", .car);
@@ -125,6 +127,7 @@ fn globals(e: *Evaluator) object.Obj {
 fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)anyerror!object.Obj {
     return switch(f) {
         .plus => apply_plus,
+        .multiply => apply_multiply,
         .equal => apply_equal,
         .null_p => apply_null_p,
         .car => apply_car,
@@ -159,6 +162,24 @@ fn apply_plus(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
             return EvalError.IllegalParameter;
         }
         result += object.as_number(&car);
+        current = object.get_cdr(&current);
+    }
+    if (object.obj_type(&current) != .nil) {
+        return EvalError.IllegalParameter;
+    }
+    return object.create_number(e.pool, result);
+}
+
+
+fn apply_multiply(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
+    var result: i32 = 1;
+    var current = s;
+    while (object.obj_type(&current) == .cons) {
+        const car = object.get_car(&current);
+        if (object.obj_type(&car) != .number) {
+            return EvalError.IllegalParameter;
+        }
+        result *= object.as_number(&car);
         current = object.get_cdr(&current);
     }
     if (object.obj_type(&current) != .nil) {
