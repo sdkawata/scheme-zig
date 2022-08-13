@@ -123,6 +123,44 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
                 codes.items[true_branch_jp].operand = @intCast(i32, codes.items.len);
             }
             return;
+        } else if (std.mem.eql(u8, symbol_val, "cond")) {
+            var has_else = false;
+            var rest_conds = cdr;
+            var jmpAddrs = std.ArrayList(usize).init(e.allocator);
+            defer std.ArrayList(usize).deinit(jmpAddrs);
+            while (object.obj_type(&rest_conds) != .nil) {
+                const cond_clause = object.get_car(&rest_conds);
+                if ((try eval.list_length(cond_clause)) < 2) {
+                    std.debug.print("malformed cond \n", .{});
+                    return EmitError.MalformError;
+                }
+                const cond = object.get_car(&cond_clause);
+                if (object.obj_type(&cond) == .symbol and std.mem.eql(u8, try object.as_symbol(e.pool, &cond), "else")) {
+                    try emit_begin(e, object.get_cdr(&cond_clause), codes, tail);
+                    has_else = true;
+                    break;
+                }
+                try emit(e, cond, codes, false);
+                const jmp_idx =  codes.items.len;
+                try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .jmp_if_false});
+                try emit_begin(e, object.get_cdr(&cond_clause), codes, tail);
+                if (!tail) {
+                    try std.ArrayList(usize).append(&jmpAddrs, codes.items.len);
+                    try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .jmp});
+                }
+                codes.items[jmp_idx].operand = @intCast(i32, codes.items.len);
+                rest_conds = object.get_cdr(&rest_conds);
+            }
+            if (! has_else) {
+                try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_undef});
+                try emit_tail(e, codes, tail);
+            }
+            if (! tail) {
+                for (jmpAddrs.items) |jmpAddr| {
+                    codes.items[jmpAddr].operand = @intCast(i32, codes.items.len);
+                }
+            }
+            return;
         } else if (std.mem.eql(u8, symbol_val, "and")) {
             const length = try eval.list_length(cdr);
             if (length == 0) {
