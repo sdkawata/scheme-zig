@@ -1,7 +1,7 @@
 (define tests (call-with-input-file "./tests/small_tests.scm" read))
 (map
     (lambda (pair)
-        (let ((actual (eval (car pair) (scheme-report-environment 5))) (expected (cadr pair)))
+        (let ((actual (eval (car pair) (interaction-environment))) (expected (cadr pair)))
             (if 
                 (equal? expected actual)
                 #t
