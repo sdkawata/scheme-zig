@@ -27,6 +27,7 @@
     ((cdr (quote (2 3))) (3))
     ((cons 1 (quote (3))) (1 3))
     (((lambda (x y) (+ x y)) 1 2) 3)
+    ((let ((x 1)) (set! x 2) x) 2)
     ((let ((f (lambda (x) (lambda (y) (+ x y))))) ((f 1) 2)) 3) ;lambda has lexical scope
     ((+ 3 (letrec ((x 1)) (+ 1 x))) 5) ;non-tail-poision letrec
     ((begin 1 2) 2)

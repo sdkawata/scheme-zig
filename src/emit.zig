@@ -179,8 +179,8 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
             return;
         } else if (std.mem.eql(u8, symbol_val, "let")) {
             const length = try eval.list_length(cdr);
-            if (length != 2) {
-                std.debug.print("let expect 2 but got {}\n", .{try eval.list_length(cdr)});
+            if (length < 2) {
+                std.debug.print("malformed let \n", .{});
                 return EmitError.MalformError;
             }
 
@@ -190,7 +190,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
             var current_binds = bindlist;
             while (object.obj_type(&current_binds) != .nil) {
                 const bind_pair = object.get_car(&current_binds);
-                const bind_pair_length = try eval.list_length(cdr);
+                const bind_pair_length = try eval.list_length(bind_pair);
                 if (bind_pair_length != 2) {
                     std.debug.print("illegal let form\n", .{});
                     return EmitError.MalformError;
@@ -211,10 +211,28 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
         } else if (std.mem.eql(u8, symbol_val, "begin")) {
             try emit_begin(e, cdr, codes, tail);
             return;
-        } else if (std.mem.eql(u8, symbol_val, "letrec")) {
+        } else if (std.mem.eql(u8, symbol_val, "set!")) {
             const length = try eval.list_length(cdr);
             if (length != 2) {
-                std.debug.print("letrec expect 2 but got {}\n", .{try eval.list_length(cdr)});
+                std.debug.print("set! expect 2 but got {}\n", .{try eval.list_length(cdr)});
+                return EmitError.MalformError;
+            }
+            const symbol = eval.list_1st(cdr);
+            if (object.obj_type(&symbol) != .symbol) {
+                std.debug.print("set first element must be symbol\n", .{});
+                return EmitError.MalformError;
+            }
+            const body = eval.list_2nd(cdr);
+            try emit(e, body, codes, true);
+            const symbol_id = object.get_symbol_id(&symbol);
+            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .set_var, .operand=@intCast(i32, symbol_id)});
+            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_undef});
+            try emit_tail(e,codes, tail);
+            return;
+        } else if (std.mem.eql(u8, symbol_val, "letrec")) {
+            const length = try eval.list_length(cdr);
+            if (length < 2) {
+                std.debug.print("malformed letrec\n", .{});
                 return EmitError.MalformError;
             }
 
