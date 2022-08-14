@@ -72,6 +72,8 @@ pub const Evaluator = struct {
 const BuildinFunc = enum(i32) {
     plus,
     multiply,
+    div,
+    gt,
     equal,
     null_p,
     car,
@@ -98,6 +100,8 @@ pub fn create_evaluator(allocator: std.mem.Allocator) !*Evaluator {
     try push_buildin_func(pool, &g, "+", .plus);
     try push_buildin_func(pool, &g, "*", .multiply);
     try push_buildin_func(pool, &g, "=", .equal);
+    try push_buildin_func(pool, &g, "/", .div);
+    try push_buildin_func(pool, &g, ">", .gt);
     try push_buildin_func(pool, &g, "null?", .null_p);
     try push_buildin_func(pool, &g, "car", .car);
     try push_buildin_func(pool, &g, "cdr", .cdr);
@@ -130,7 +134,9 @@ fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)any
     return switch(f) {
         .plus => apply_plus,
         .multiply => apply_multiply,
+        .div => apply_div,
         .equal => apply_equal,
+        .gt => apply_gt,
         .null_p => apply_null_p,
         .car => apply_car,
         .cdr => apply_cdr,
@@ -273,6 +279,21 @@ fn apply_equal(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj 
     }
 }
 
+
+fn apply_gt(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
+    if ((try list_length(s)) != 2) {
+        std.debug.print("= expect 2 args but got {}\n", .{try list_length(s)});
+        return EvalError.IllegalParameter;
+    }
+    const left = list_1st(s);
+    const right = list_2nd(s);
+    if ((try numeric_compare(e, left, right)) == 1) {
+        return object.create_true(e.pool);
+    } else {
+        return object.create_false(e.pool);
+    }
+}
+
 fn apply_minus(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     const length = try list_length(s);
     if (length == 0) {
@@ -313,6 +334,60 @@ fn apply_minus(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj 
             result_f32 -= cast_to_float(e, car);
         } else {
             result_i32 -= object.as_number(&car);
+        }
+        current = object.get_cdr(&current);
+    }
+    if (object.obj_type(&current) != .nil) {
+        return EvalError.IllegalParameter;
+    }
+    if (current_float) {
+        return object.create_float(e.pool, result_f32);
+    } else {
+        return object.create_number(e.pool, result_i32);
+    }
+}
+
+
+fn apply_div(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
+    const length = try list_length(s);
+    if (length == 0) {
+        return EvalError.IllegalParameter;
+    } else if (length == 1) {
+        const first = object.get_car(&s);
+        if (object.obj_type(&first) == .number) {
+            return try object.create_number(e.pool, object.as_number(&first));
+        } else if (object.obj_type(&first) == .float) {
+            return try object.create_float(e.pool, object.as_float(&first));
+        } else {
+            return EvalError.IllegalParameter;
+        }
+    }
+    var result_i32: i32 = 0;
+    var result_f32: f32 = 0.0;
+    var current_float = false;
+    var current = object.get_cdr(&s);
+    const first = object.get_car(&s);
+    if (object.obj_type(&first) == .number) {
+        result_i32 = object.as_number(&first);
+    } else if (object.obj_type(&first) == .float) {
+        current_float = true;
+        result_f32 = object.as_float(&first);
+    } else {
+        return EvalError.IllegalParameter;
+    }
+    while (object.obj_type(&current) == .cons) {
+        const car = object.get_car(&current);
+        if (! is_numeric_type(object.obj_type(&car))) {
+            return EvalError.IllegalParameter;
+        }
+        if (object.obj_type(&car) == .float and ! current_float) {
+            current_float = true;
+            result_f32 = @intToFloat(f32, result_i32);
+        }
+        if (current_float) {
+            result_f32 /= cast_to_float(e, car);
+        } else {
+            result_i32 = @divExact(result_i32, object.as_number(&car));
         }
         current = object.get_cdr(&current);
     }
