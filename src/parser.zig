@@ -54,19 +54,19 @@ pub fn skip_whitespaces(p: *Parser) !void {
 }
 
 fn parse_number(p: *Parser, pool: *object.ObjPool, sign: i32) !object.Obj {
-    var has_dot = false;
+    var is_float = false;
     const start = p.p;
     while(true) {
         const peeked = peek(p, 0) catch 0;
         if (peeked >= '0' and peeked <= '9') {
-        } else if (peeked == '.') {
-            has_dot = true;
+        } else if (peeked == '.' or peeked == 'e' or peeked == '-'  or peeked == '+') {
+            is_float = true;
         } else {
             break;
         }
         p.p+=1;
     }
-    if (has_dot) {
+    if (is_float) {
         return try object.create_float(pool, (try std.fmt.parseFloat(f32, p.s[start..p.p])) * @intToFloat(f32, sign));
     } else {
         return try object.create_number(pool, (try std.fmt.parseInt(i32, p.s[start..p.p], 10)) * sign);

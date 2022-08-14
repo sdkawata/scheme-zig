@@ -536,6 +536,8 @@ pub fn equal(obj1: * const Obj, obj2: * const Obj) bool {
         return true;
     } else if (type1 == .number and type2 == .number) {
         return as_number(obj1) == as_number(obj2);
+    } else if (type1 == .float and type2 == .float) {
+        return as_float(obj1) == as_float(obj2);
     } else if (type1 == .char and type2 == .char) {
         return get_char_value(obj1) == get_char_value(obj2);
     }

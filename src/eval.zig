@@ -156,38 +156,107 @@ fn apply_display(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Ob
 }
 
 fn apply_plus(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
-    var result: i32 = 0;
+    var result_i32: i32 = 0;
+    var result_f32: f32 = 0.0;
+    var current_float = false;
     var current = s;
     while (object.obj_type(&current) == .cons) {
         const car = object.get_car(&current);
-        if (object.obj_type(&car) != .number) {
+        
+        if (! is_numeric_type(object.obj_type(&car))) {
             return EvalError.IllegalParameter;
         }
-        result += object.as_number(&car);
+        if (object.obj_type(&car) == .float and ! current_float) {
+            current_float = true;
+            result_f32 = @intToFloat(f32, result_i32);
+        }
+        if (current_float) {
+            result_f32 += cast_to_float(e, car);
+        } else {
+            result_i32 += object.as_number(&car);
+        }
         current = object.get_cdr(&current);
     }
     if (object.obj_type(&current) != .nil) {
         return EvalError.IllegalParameter;
     }
-    return object.create_number(e.pool, result);
+    if (current_float) {
+        return object.create_float(e.pool, result_f32);
+    } else {
+        return object.create_number(e.pool, result_i32);
+    }
 }
 
-
 fn apply_multiply(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
-    var result: i32 = 1;
+    var result_i32: i32 = 1;
+    var result_f32: f32 = 1.0;
+    var current_float = false;
     var current = s;
     while (object.obj_type(&current) == .cons) {
         const car = object.get_car(&current);
-        if (object.obj_type(&car) != .number) {
+        if (! is_numeric_type(object.obj_type(&car))) {
             return EvalError.IllegalParameter;
         }
-        result *= object.as_number(&car);
+        if (object.obj_type(&car) == .float and ! current_float) {
+            current_float = true;
+            result_f32 = @intToFloat(f32, result_i32);
+        }
+        if (current_float) {
+            result_f32 *= cast_to_float(e, car);
+        } else {
+            result_i32 *= object.as_number(&car);
+        }
         current = object.get_cdr(&current);
     }
     if (object.obj_type(&current) != .nil) {
         return EvalError.IllegalParameter;
     }
-    return object.create_number(e.pool, result);
+    if (current_float) {
+        return object.create_float(e.pool, result_f32);
+    } else {
+        return object.create_number(e.pool, result_i32);
+    }
+}
+
+fn is_numeric_type(t: object.ObjType) bool {
+    return t == .number or t == .float;
+}
+
+fn cast_to_float(_: *Evaluator, s: object.Obj) f32 {
+    if (object.obj_type(&s) == .number) {
+        return @intToFloat(f32, object.as_number(&s));
+    } else if (object.obj_type(&s) == .float) {
+        return object.as_float(&s);
+    } else {
+        unreachable;
+    }
+}
+
+fn numeric_compare(e: *Evaluator, s1: object.Obj, s2:object.Obj) anyerror!i32 {
+    const t1 = object.obj_type(&s1);
+    const t2 = object.obj_type(&s2);
+    if (t1 == .number and t2 == .number) {
+        const n1 = object.as_number(&s1);
+        const n2 = object.as_number(&s2);
+        if (n1 == n2) {
+            return 0;
+        } else if (n1 < n2) {
+            return -1;
+        } else {
+            return 1;
+        }
+    } else if (is_numeric_type(t1) and is_numeric_type(t2)) {
+        const f1 = cast_to_float(e, s1);
+        const f2 = cast_to_float(e, s2);
+        if (f1 == f2) {
+            return 0;
+        } else if (f1 < f2) {
+            return -1;
+        } else {
+            return 1;
+        }
+    }
+    return EvalError.IllegalParameter;
 }
 
 fn apply_equal(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
@@ -197,11 +266,7 @@ fn apply_equal(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj 
     }
     const left = list_1st(s);
     const right = list_2nd(s);
-    if (object.obj_type(&left) != .number or object.obj_type(&right) != .number) {
-        std.debug.print("must given number\n", .{});
-        return EvalError.IllegalParameter;
-    }
-    if (object.as_number(&left) == object.as_number(&right)) {
+    if ((try numeric_compare(e, left, right)) == 0) {
         return object.create_true(e.pool);
     } else {
         return object.create_false(e.pool);
@@ -209,20 +274,56 @@ fn apply_equal(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj 
 }
 
 fn apply_minus(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
-    if ((try list_length(s)) != 2) {
-        std.debug.print("= expect 2 args but got {}\n", .{try list_length(s)});
+    const length = try list_length(s);
+    if (length == 0) {
+        return EvalError.IllegalParameter;
+    } else if (length == 1) {
+        const first = object.get_car(&s);
+        if (object.obj_type(&first) == .number) {
+            return try object.create_number(e.pool, - object.as_number(&first));
+        } else if (object.obj_type(&first) == .float) {
+            return try object.create_float(e.pool, - object.as_float(&first));
+        } else {
+            return EvalError.IllegalParameter;
+        }
+    }
+    var result_i32: i32 = 0;
+    var result_f32: f32 = 0.0;
+    var current_float = false;
+    var current = object.get_cdr(&s);
+    const first = object.get_car(&s);
+    if (object.obj_type(&first) == .number) {
+        result_i32 = object.as_number(&first);
+    } else if (object.obj_type(&first) == .float) {
+        current_float = true;
+        result_f32 = object.as_float(&first);
+    } else {
         return EvalError.IllegalParameter;
     }
-    const left = list_1st(s);
-    const right = list_2nd(s);
-    if (object.obj_type(&left) != .number or object.obj_type(&right) != .number) {
-        std.debug.print("must given number\n", .{});
+    while (object.obj_type(&current) == .cons) {
+        const car = object.get_car(&current);
+        if (! is_numeric_type(object.obj_type(&car))) {
+            return EvalError.IllegalParameter;
+        }
+        if (object.obj_type(&car) == .float and ! current_float) {
+            current_float = true;
+            result_f32 = @intToFloat(f32, result_i32);
+        }
+        if (current_float) {
+            result_f32 -= cast_to_float(e, car);
+        } else {
+            result_i32 -= object.as_number(&car);
+        }
+        current = object.get_cdr(&current);
+    }
+    if (object.obj_type(&current) != .nil) {
         return EvalError.IllegalParameter;
     }
-    return object.create_number(
-        e.pool,
-        object.as_number(&left) - object.as_number(&right)
-    );
+    if (current_float) {
+        return object.create_float(e.pool, result_f32);
+    } else {
+        return object.create_number(e.pool, result_i32);
+    }
 }
 
 

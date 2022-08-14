@@ -33,8 +33,11 @@ test "execute small test" {
 
         const evaluator = try eval.create_evaluator(allocator);
         defer eval.destroy_evaluator(evaluator);
-        const expr = try parser.parse_string(expr_str, evaluator.pool);
-        const expected = try parser.parse_string(expected_str, evaluator.pool);
+        var expr = try parser.parse_string(expr_str, evaluator.pool);
+        var expected = try parser.parse_string(expected_str, evaluator.pool);
+        try object.push_root(evaluator.pool, &expr);
+        try object.push_root(evaluator.pool, &expected);
+
         evaluator.pool.gc_every_time = true;
 
         // std.debug.print("evaling {s}\n", .{expr_str});
