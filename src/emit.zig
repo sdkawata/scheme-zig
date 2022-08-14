@@ -341,6 +341,10 @@ fn emit(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCode), t
             try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_char, .operand = @intCast(i32, object.get_char_value(&s))});
             try emit_tail(e,codes,tail);
         },
+        .float => {
+            try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .push_float, .operand = @bitCast(i32, object.as_float(&s))});
+            try emit_tail(e,codes,tail);
+        },
         .buildin => EmitError.UnexpectedIntervalValue,
         .undef => EmitError.UnexpectedIntervalValue,
         .frame => EmitError.UnexpectedIntervalValue,

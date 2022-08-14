@@ -48,6 +48,7 @@ fn write_rec(pool: *object.ObjPool, obj: object.Obj, allocator: std.mem.Allocato
         .nil => std.fmt.format(writer.writer(), "()", .{}),
         .symbol => write_symbol(pool, obj, allocator, writer),
         .number => std.fmt.format(writer.writer(), "{}", .{object.as_number(&obj)}),
+        .float => std.fmt.format(writer.writer(), "{}", .{object.as_float(&obj)}),
         .buildin => std.fmt.format(writer.writer(), "#<buildin: {}>", .{object.get_buildin_value(&obj)}),
         .frame => std.fmt.format(writer.writer(), "#<frame>", .{}),
         .func => std.fmt.format(writer.writer(), "#<closure>", .{}),

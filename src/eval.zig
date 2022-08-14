@@ -24,6 +24,7 @@ pub const OpCodeTag = enum(u32) {
     dup_car, // operand: no stack: CONS -> CONS CAR
     dup_cdr, // operand: no stack: CONS -> CONS CDR
     push_number, // operand: number stack: -> NUMBER
+    push_float, // operand: number stack: -> FLOAT
     push_char, //operand: number stack: -> CHAR
     push_true, //operand no stack: -> TRUE
     push_false, //operand no stack: -> FALSE
@@ -431,6 +432,9 @@ fn eval_loop(e: *Evaluator) !object.Obj {
             },
             .push_number => {
                 try push_stack(e, try object.create_number(e.pool, current_opcode.operand));
+            },
+            .push_float => {
+                try push_stack(e, try object.create_float(e.pool, @bitCast(f32, current_opcode.operand)));
             },
             .push_char => {
                 try push_stack(e, try object.create_char(e.pool, @intCast(u8, current_opcode.operand)));

@@ -54,12 +54,23 @@ pub fn skip_whitespaces(p: *Parser) !void {
 }
 
 fn parse_number(p: *Parser, pool: *object.ObjPool, sign: i32) !object.Obj {
-    var val: i32 = 0;
-    while(p.s.len > p.p and p.s[p.p] >= '0' and p.s[p.p] <= '9') {
-        val = val * 10 + (p.s[p.p] - '0');
+    var has_dot = false;
+    const start = p.p;
+    while(true) {
+        const peeked = peek(p, 0) catch 0;
+        if (peeked >= '0' and peeked <= '9') {
+        } else if (peeked == '.') {
+            has_dot = true;
+        } else {
+            break;
+        }
         p.p+=1;
     }
-    return try object.create_number(pool, val * sign);
+    if (has_dot) {
+        return try object.create_float(pool, (try std.fmt.parseFloat(f32, p.s[start..p.p])) * @intToFloat(f32, sign));
+    } else {
+        return try object.create_number(pool, (try std.fmt.parseInt(i32, p.s[start..p.p], 10)) * sign);
+    }
 }
 
 fn parse_list(p: *Parser, pool: *object.ObjPool) anyerror!object.Obj {
@@ -153,7 +164,7 @@ fn parse_datum(p:*Parser, pool: *object.ObjPool) anyerror!object.Obj {
             },
             else => return ParseError.UnexpectedToken,
         }
-    } else if (peeked >= '0' and peeked <= '9') {
+    } else if ((peeked >= '0' and peeked <= '9') or peeked == '.') {
         return try parse_number(p, pool, 1);
     } else if (peeked == '(') {
         p.p+=1;
@@ -228,6 +239,18 @@ test "parse number with comment" {
     const number: object.Obj = try parse_string("42 ; -> this is comment !! <-", pool);
     try std.testing.expectEqual(object.ObjType.number, object.obj_type(&number));
     try std.testing.expectEqual(@intCast(i32, 42), object.as_number(&number));
+}
+
+test "parse float" {
+    const allocator: std.mem.Allocator = std.testing.allocator;
+    const pool = try object.create_obj_pool(allocator);
+    defer object.destroy_obj_pool(pool);
+    const number: object.Obj = try parse_string("1.5", pool);
+    try std.testing.expectEqual(object.ObjType.float, object.obj_type(&number));
+    try std.testing.expectEqual(@floatCast(f32, 1.5), object.as_float(&number));
+    const number2: object.Obj = try parse_string(".5", pool);
+    try std.testing.expectEqual(object.ObjType.float, object.obj_type(&number2));
+    try std.testing.expectEqual(@floatCast(f32, 0.5), object.as_float(&number2));
 }
 
 test "parse list" {

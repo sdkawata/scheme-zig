@@ -53,6 +53,7 @@ const ObjValueType = enum(u16) {
     b_true,
     b_false,
     number_i32,
+    float_f32,
     char,
     nil,
     buildin,
@@ -72,6 +73,7 @@ pub const ObjType =  enum(u32) {
     b_false,
     undef,
     number,
+    float,
     char,
     cons,
     nil,
@@ -131,6 +133,7 @@ pub fn obj_type (obj: * const Obj) ObjType {
             .undef => .undef,
             .nil => .nil,
             .number_i32 => .number,
+            .float_f32 => .float,
             .char => .char,
             .buildin => .buildin,
             .symbol => .symbol,
@@ -157,6 +160,11 @@ fn obj_ref_value(header: *ObjHeader) i32 {
 pub fn as_number(obj: * const Obj) i32 {
     assert(is_value(obj) and obj_value_type(obj) == .number_i32);
     return obj_value(obj);
+}
+
+pub fn as_float(obj: * const Obj) f32 {
+    assert(is_value(obj) and obj_value_type(obj) == .float_f32);
+    return @bitCast(f32, obj_value(obj));
 }
 
 pub fn get_char_value(obj: * const Obj) u8 {
@@ -461,6 +469,10 @@ pub fn create_undef(_: *ObjPool) !Obj {
 
 pub fn create_number(_: *ObjPool, n: i32) !Obj {
     return create_value(ObjValueType.number_i32, n);
+}
+
+pub fn create_float(_: *ObjPool, n: f32) !Obj {
+    return create_value(ObjValueType.float_f32, @bitCast(i32, n));
 }
 
 pub fn create_char(_: *ObjPool, n: u8) !Obj {
