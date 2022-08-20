@@ -350,7 +350,7 @@ fn alloc(pool: *ObjPool, size: usize) ![*]u8 {
     return ptr;
 }
 
-fn obj_size(obj:Obj) Obj {
+fn obj_size(obj:Obj) usize {
     return switch(obj_ref_type(&obj)) {
         .cons => @sizeOf(ObjConsCell),
         .frame => @sizeOf(ObjFrame),
@@ -373,7 +373,7 @@ fn copy_obj(pool: *ObjPool, obj:Obj) ! Obj {
     assert(@ptrToInt(pool.to_space) <= obj and obj < (@ptrToInt(pool.to_space) + pool.space_size));
     const size = obj_size(obj);
     // std.debug.print("type:{} size:{} copy {*} to {*}\n", .{obj_ref_type(&obj), size, @intToPtr([*] u8, obj), pool.current});
-    @memcpy(pool.current, @intToPtr([*] u8, obj), size);
+    @memcpy(pool.current, @intToPtr([*] u8, @intCast(usize, obj)), size);
     try init_header(as_obj_header(&obj), ObjRefType.forwarded, 0);
     const forwarding_addr = @intCast(Obj, @ptrToInt(pool.current));
     @ptrCast(*ObjForwarded, as_obj_header(&obj)).forwarding_addr = forwarding_addr;
@@ -403,17 +403,17 @@ fn start_gc(pool: *ObjPool) ! void {
         // std.debug.print("scanning {} {*}\n", .{obj_ref_type(&obj), scan_ptr});
         switch(obj_ref_type(&obj)) {
             .cons => {
-                const cons = @ptrCast(*ObjConsCell, @intToPtr(*u8, obj));
+                const cons = @ptrCast(*ObjConsCell, @intToPtr(*u8, @intCast(usize, obj)));
                 cons.car = try copy_obj(pool,cons.car);
                 cons.cdr = try copy_obj(pool,cons.cdr);
             },
             .frame => {
-                const frame = @ptrCast(*ObjFrame, @intToPtr(*u8, obj));
+                const frame = @ptrCast(*ObjFrame, @intToPtr(*u8, @intCast(usize, obj)));
                 frame.vars = try copy_obj(pool,frame.vars);
                 frame.previous = try copy_obj(pool,frame.previous);
             },
             .func => {
-                const func = @ptrCast(*ObjFunc, @intToPtr(*u8, obj));
+                const func = @ptrCast(*ObjFunc, @intToPtr(*u8, @intCast(usize, obj)));
                 func.env = try copy_obj(pool,func.env);
             },
             .forwarded => unreachable,

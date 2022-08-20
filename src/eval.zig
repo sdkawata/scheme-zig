@@ -1,6 +1,7 @@
 const object = @import("object.zig");
 const format = @import("format.zig");
 const std = @import("std");
+const debug_print = @import("debug.zig").debug_print;
 
 const EvalError  = error {
     VariableNotFound,
@@ -149,12 +150,12 @@ fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)any
 fn debug_displayer(e:*Evaluator, obj: object.Obj) anyerror!void {
     const formatted = try format.display_to_slice(e.pool, obj, e.allocator);
     defer e.allocator.free(formatted);
-    std.debug.print("{s}", .{formatted});
+    debug_print("{s}", .{formatted});
 }
 
 fn apply_display(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     if ((try list_length(s)) != 1) {
-        std.debug.print("display expect 1 args but got {}\n", .{try list_length(s)});
+        debug_print("display expect 1 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
     try e.displayer(e, list_1st(s));
@@ -267,7 +268,7 @@ fn numeric_compare(e: *Evaluator, s1: object.Obj, s2:object.Obj) anyerror!i32 {
 
 fn apply_equal(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     if ((try list_length(s)) != 2) {
-        std.debug.print("= expect 2 args but got {}\n", .{try list_length(s)});
+        debug_print("= expect 2 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
     const left = list_1st(s);
@@ -404,7 +405,7 @@ fn apply_div(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
 
 fn apply_null_p(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     if ((try list_length(s)) != 1) {
-        std.debug.print("nil? expect 1 args but got {}\n", .{try list_length(s)});
+        debug_print("nil? expect 1 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
     if (object.obj_type(&list_1st(s)) == .nil) {
@@ -416,12 +417,12 @@ fn apply_null_p(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj
 
 fn apply_car(_: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     if ((try list_length(s)) != 1) {
-        std.debug.print("car expect 1 args but got {}\n", .{try list_length(s)});
+        debug_print("car expect 1 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
     const car = object.get_car(&s);
     if (object.obj_type(&car) != .cons) {
-        std.debug.print("car got non-list\n", .{});
+        debug_print("car got non-list\n", .{});
         return EvalError.IllegalParameter;
     }
     return object.get_car(&car);
@@ -429,12 +430,12 @@ fn apply_car(_: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
 
 fn apply_cdr(_: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     if ((try list_length(s)) != 1) {
-        std.debug.print("cdr expect 1 args but got {}\n", .{try list_length(s)});
+        debug_print("cdr expect 1 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
     const car = object.get_car(&s);
     if (object.obj_type(&car) != .cons) {
-        std.debug.print("car got non-list\n", .{});
+        debug_print("car got non-list\n", .{});
         return EvalError.IllegalParameter;
     }
     return object.get_cdr(&car);
@@ -442,7 +443,7 @@ fn apply_cdr(_: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
 
 fn apply_cons(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     if ((try list_length(s)) != 2) {
-        std.debug.print("cons expect 2 args but got {}\n", .{try list_length(s)});
+        debug_print("cons expect 2 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
     var car = list_1st(s);
@@ -513,7 +514,7 @@ fn push_stack(e: *Evaluator, obj:object.Obj) !void {
 fn eval_loop(e: *Evaluator) !object.Obj {
     while(true) {
         const current_opcode = e.compiled_funcs.items[e.current_func].codes[e.program_pointer];
-        // std.debug.print("fun={} pp={} sp={} opcode={}\n", .{e.current_func, e.program_pointer, e.pool.stack_frames.items.len, current_opcode});
+        // debug_print("fun={} pp={} sp={} opcode={}\n", .{e.current_func, e.program_pointer, e.pool.stack_frames.items.len, current_opcode});
         switch (current_opcode.tag) {
             .call => {
                 if (e.func_frames.items.len > MAX_RECURSIVE_CALL) {
@@ -572,7 +573,7 @@ fn eval_loop(e: *Evaluator) !object.Obj {
             .lookup => {
                 const idx = @intCast(usize, current_opcode.operand);
                 const val = object.lookup_frame(&e.pool.current_env, idx) catch |err| if (err == object.LookUpError.NotFound) {
-                   std.debug.print("variable not found {s}\n", .{e.pool.symbol_table.items[idx]});
+                   debug_print("variable not found {s}\n", .{e.pool.symbol_table.items[idx]});
                    return EvalError.VariableNotFound;
                 } else {return err;};
                 try std.ArrayList(object.Obj).append(
@@ -703,12 +704,12 @@ fn eval_loop(e: *Evaluator) !object.Obj {
 
 
 pub fn debug_print_func(e: *Evaluator, func_id: usize) void {
-    std.debug.print("==function {}==\n", .{func_id});
+    debug_print("==function {}==\n", .{func_id});
     const func = e.compiled_funcs.items[func_id];
     for (func.codes) |code, i| {
-        std.debug.print("p={} {}\n", .{i, code});
+        debug_print("p={} {}\n", .{i, code});
     }
-    std.debug.print("==end function {}==\n", .{func_id});
+    debug_print("==end function {}==\n", .{func_id});
 }
 
 pub fn debug_print_symbols(e: *Evaluator) void {

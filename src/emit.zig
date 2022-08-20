@@ -1,6 +1,7 @@
 const object = @import("object.zig");
 const eval = @import("eval.zig");
 const std = @import("std");
+const debug_print = @import("debug.zig").debug_print;
 
 const EmitError = error {
     MalformError,
@@ -54,7 +55,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
         const symbol_val = try object.as_symbol(e.pool, &car);
         if (std.mem.eql(u8, symbol_val, "quote")) {
             if ((try eval.list_length(cdr)) != 1) {
-                std.debug.print("malformed quote: expect 1 args but got {}\n", .{try eval.list_length(cdr)});
+                debug_print("malformed quote: expect 1 args but got {}\n", .{try eval.list_length(cdr)});
                 return EmitError.MalformError;
             }
             const idx = e.pool.consts.items.len;
@@ -64,7 +65,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
             return;
         } else if (std.mem.eql(u8, symbol_val, "define")) {
             if ((try eval.list_length(cdr)) < 2) {
-                std.debug.print("define expect 2 args but got {}\n", .{try eval.list_length(cdr)});
+                debug_print("define expect 2 args but got {}\n", .{try eval.list_length(cdr)});
                 return EmitError.MalformError;
             }
             var key = eval.list_1st(cdr);
@@ -85,7 +86,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
             return;
         } else if (std.mem.eql(u8, symbol_val, "lambda")) {
             if ((try eval.list_length(cdr)) < 2) {
-                std.debug.print("lambda expect 2 args but got {}\n", .{try eval.list_length(cdr)});
+                debug_print("lambda expect 2 args but got {}\n", .{try eval.list_length(cdr)});
                 return EmitError.MalformError;
             }
             const args = eval.list_1st(cdr);
@@ -95,7 +96,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
         } else if (std.mem.eql(u8, symbol_val, "if")) {
             const length = try eval.list_length(cdr);
             if (length != 2 and length != 3) {
-                std.debug.print("malformed if expect 2 or 3 args but got {}\n", .{try eval.list_length(cdr)});
+                debug_print("malformed if expect 2 or 3 args but got {}\n", .{try eval.list_length(cdr)});
                 return EmitError.MalformError;
             }
             const cond = object.get_car(&cdr);
@@ -131,7 +132,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
             while (object.obj_type(&rest_conds) != .nil) {
                 const cond_clause = object.get_car(&rest_conds);
                 if ((try eval.list_length(cond_clause)) < 2) {
-                    std.debug.print("malformed cond \n", .{});
+                    debug_print("malformed cond \n", .{});
                     return EmitError.MalformError;
                 }
                 const cond = object.get_car(&cond_clause);
@@ -218,7 +219,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
         } else if (std.mem.eql(u8, symbol_val, "let")) {
             const length = try eval.list_length(cdr);
             if (length < 2) {
-                std.debug.print("malformed let \n", .{});
+                debug_print("malformed let \n", .{});
                 return EmitError.MalformError;
             }
 
@@ -230,7 +231,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
                 const bind_pair = object.get_car(&current_binds);
                 const bind_pair_length = try eval.list_length(bind_pair);
                 if (bind_pair_length != 2) {
-                    std.debug.print("illegal let form\n", .{});
+                    debug_print("illegal let form\n", .{});
                     return EmitError.MalformError;
                 }
                 const symbol =eval.list_1st(bind_pair);
@@ -252,12 +253,12 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
         } else if (std.mem.eql(u8, symbol_val, "set!")) {
             const length = try eval.list_length(cdr);
             if (length != 2) {
-                std.debug.print("set! expect 2 but got {}\n", .{try eval.list_length(cdr)});
+                debug_print("set! expect 2 but got {}\n", .{try eval.list_length(cdr)});
                 return EmitError.MalformError;
             }
             const symbol = eval.list_1st(cdr);
             if (object.obj_type(&symbol) != .symbol) {
-                std.debug.print("set first element must be symbol\n", .{});
+                debug_print("set first element must be symbol\n", .{});
                 return EmitError.MalformError;
             }
             const body = eval.list_2nd(cdr);
@@ -270,7 +271,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
         } else if (std.mem.eql(u8, symbol_val, "letrec")) {
             const length = try eval.list_length(cdr);
             if (length < 2) {
-                std.debug.print("malformed letrec\n", .{});
+                debug_print("malformed letrec\n", .{});
                 return EmitError.MalformError;
             }
 
@@ -282,7 +283,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
                 const bind_pair = object.get_car(&current_binds);
                 const bind_pair_length = try eval.list_length(bind_pair);
                 if (bind_pair_length != 2) {
-                    std.debug.print("illegal letrec form\n", .{});
+                    debug_print("illegal letrec form\n", .{});
                     return EmitError.MalformError;
                 }
                 const symbol_id = object.get_symbol_id(&eval.list_1st(bind_pair));
@@ -364,7 +365,7 @@ pub fn emit_register_args(_: *eval.Evaluator, args: object.Obj, codes: *std.Arra
         var current_args = args;
         while (true) {
             if (object.obj_type(&current_args) != .cons) {
-                std.debug.print("illegal func arg param\n", .{});
+                debug_print("illegal func arg param\n", .{});
                 return EmitError.MalformError;
             }
             const symbol = object.get_car(&current_args);

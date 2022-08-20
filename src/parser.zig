@@ -1,5 +1,6 @@
 const std = @import("std");
 const object = @import("object.zig");
+const debug_print = @import("debug.zig").debug_print;
 
 pub const ParseError  = error {
     UnexpectedToken,
@@ -190,7 +191,7 @@ fn parse_datum(p:*Parser, pool: *object.ObjPool) anyerror!object.Obj {
             return symbol;
         }
     }
-    std.debug.print("unexpected token pos:{} token:{}\n", .{p.p, peeked});
+    debug_print("unexpected token pos:{} token:{}\n", .{p.p, peeked});
     return ParseError.UnexpectedToken;
 }
 
