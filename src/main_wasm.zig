@@ -14,7 +14,7 @@ fn eval_str_raw() !void {
     const allocator = gpa.allocator();
     const evaluator = try eval.create_evaluator(allocator);
     defer eval.destroy_evaluator(evaluator);
-    var p = parser.Parser{.s = "(display 1)", .p = 0};
+    var p = parser.Parser{.s = "(display 999)", .p = 0};
     while(true) {
         const obj = try parser.parse(&p, evaluator.pool);
         const emitted_idx = emit.emit_func(evaluator, obj, try object.create_nil(evaluator.pool)) catch |err| {
