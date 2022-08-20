@@ -283,7 +283,7 @@ fn apply_equal(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj 
 
 fn apply_gt(e: *Evaluator, s: object.Obj, _: object.Obj) anyerror!object.Obj {
     if ((try list_length(s)) != 2) {
-        std.debug.print("= expect 2 args but got {}\n", .{try list_length(s)});
+        debug_print("= expect 2 args but got {}\n", .{try list_length(s)});
         return EvalError.IllegalParameter;
     }
     const left = list_1st(s);
@@ -713,11 +713,11 @@ pub fn debug_print_func(e: *Evaluator, func_id: usize) void {
 }
 
 pub fn debug_print_symbols(e: *Evaluator) void {
-    std.debug.print("==symbol table==\n", .{});
+    debug_print("==symbol table==\n", .{});
     for (e.pool.symbol_table.items) |symbol, i| {
-        std.debug.print("i={} {s}\n", .{i, symbol});
+        debug_print("i={} {s}\n", .{i, symbol});
     }
-    std.debug.print("==end symbol table==\n", .{});
+    debug_print("==end symbol table==\n", .{});
 }
 
 pub fn eval_compiled_global(e: *Evaluator, func_no: usize) !object.Obj {
