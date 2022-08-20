@@ -1,29 +1,43 @@
 
-let memory;
+let wasm;
 
 const debug = {
     debug_out(ptr, size) {
         // ascii only
         var result = "";
-        const array = new Uint8Array(memory.buffer);
+        const array = new Uint8Array(wasm.instance.exports.memory.buffer);
         for (var i =0; i< size; i++) {
             result += String.fromCharCode(array[ptr + i]);
         }
-        console.log(ptr, size, result);
+        window.document.getElementById("output_textarea").value += result;
     }
 }
 
 
 async function startWasm() {
     const response = await fetch('main_wasm.wasm');
-    const wasm = await WebAssembly.instantiate(await response.arrayBuffer(), {
+    wasm = await WebAssembly.instantiate(await response.arrayBuffer(), {
         debug,
     });
     console.log(wasm);
-    memory = wasm.instance.exports.memory;
-    console.log(wasm.instance.exports._start());
-    console.log(wasm.instance.exports.eval_str());
-    console.log(memory);
+    wasm.instance.exports._start();
+}
+
+function evalStr(s) {
+    const size = s.length;
+    const ptr = wasm.instance.exports.alloc_str(size);
+    console.log(ptr, size);
+    const array = new Uint8Array(wasm.instance.exports.memory.buffer);
+    for (var i =0; i< size; i++) {
+        array[ptr + i] = s.charCodeAt(i);
+    }
+    wasm.instance.exports.eval_str(ptr, size);
+    wasm.instance.exports.free_str(ptr, size);
 }
 
 startWasm();
+
+window.document.getElementById("exec").addEventListener("click", () => {
+    window.document.getElementById("output_textarea").value = "";
+    evalStr(window.document.getElementById("input_textarea").value);
+});

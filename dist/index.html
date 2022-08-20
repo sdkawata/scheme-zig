@@ -1,7 +1,32 @@
 <html>
 <head>
+    <style>
+        .main {
+            display: flex;
+        }
+        .input, .output {
+            flex-grow: 1;
+            padding: 10px;
+        }
+        #input_textarea, #output_textarea {
+            width: 100%;
+            resize: none;
+            height: 600px;
+        }
+    </style>
 </head>
 <body>
+    <div class="main">
+        <div class="input">
+            input:<br/>
+            <textarea id="input_textarea">(display 999)</textarea>
+        </div>
+        <div class="output">
+            output:<br/>
+            <textarea id="output_textarea"></textarea>
+        </div>
+    </div>
+    <button type="button" id="exec">exec</button>
     <script src="main.js"></script>
 </body>
 </html>
