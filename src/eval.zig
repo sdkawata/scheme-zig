@@ -147,7 +147,7 @@ fn lookup_buildin_func(f: BuildinFunc) fn(*Evaluator, object.Obj, object.Obj)any
 }
 
 fn debug_displayer(e:*Evaluator, obj: object.Obj) anyerror!void {
-    const formatted = try format.display(e.pool, obj, e.allocator);
+    const formatted = try format.display_to_slice(e.pool, obj, e.allocator);
     defer e.allocator.free(formatted);
     std.debug.print("{s}", .{formatted});
 }

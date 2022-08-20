@@ -8,7 +8,7 @@ const format = @import("format.zig");
 
 var output_buf: ?*std.ArrayList(u8) = null;
 fn test_displayer(e:*eval.Evaluator, obj:object.Obj) anyerror!void {
-    const formatted = try format.display(e.pool, obj, std.testing.allocator);
+    const formatted = try format.display_to_slice(e.pool, obj, std.testing.allocator);
     defer std.testing.allocator.free(formatted);
     try std.fmt.format(output_buf.?.*.writer(), "{s}", .{formatted});
 }
