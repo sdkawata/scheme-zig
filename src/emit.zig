@@ -20,7 +20,7 @@ fn emit_create_list(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eva
 }
 
 fn emit_closure(e: *eval.Evaluator, args: object.Obj, body: object.Obj, codes: *std.ArrayList(eval.OpCode), tail: bool) anyerror!void {
-    const func_id = try emit_func(e, body, args);
+    const func_id = try emit_func_from_body(e, body, args);
     try std.ArrayList(eval.OpCode).append(codes, eval.OpCode{.tag = .closure, .operand = @intCast(i32, func_id)});
     try emit_tail(e, codes, tail);
     return;
@@ -74,7 +74,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
             } else if (object.obj_type(&key) == .cons) {
                 const args = object.get_cdr(&key);
                 key = object.get_car(&key);
-                const body = eval.list_2nd(cdr);
+                const body = object.get_cdr(&cdr);
                 try emit_closure(e, args, body, codes, false);
             } else {
                 return EmitError.MalformError;
@@ -89,7 +89,7 @@ fn emit_cons(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCod
                 return EmitError.MalformError;
             }
             const args = eval.list_1st(cdr);
-            const body = eval.list_2nd(cdr);
+            const body = object.get_cdr(&cdr);
             try emit_closure(e, args, body, codes, tail);
             return;
         } else if (std.mem.eql(u8, symbol_val, "if")) {
@@ -359,7 +359,7 @@ fn emit(e: *eval.Evaluator, s: object.Obj, codes: *std.ArrayList(eval.OpCode), t
     };
 }
 
-pub fn emit_register_args(e: *eval.Evaluator, args: object.Obj, codes: *std.ArrayList(eval.OpCodes)) !void {
+pub fn emit_register_args(_: *eval.Evaluator, args: object.Obj, codes: *std.ArrayList(eval.OpCode)) !void {
     if (object.obj_type(&args) != .nil) {
         var current_args = args;
         while (true) {
@@ -383,6 +383,20 @@ pub fn emit_register_args(e: *eval.Evaluator, args: object.Obj, codes: *std.Arra
             }
         }
     }
+}
+
+pub fn emit_func_from_body(e: *eval.Evaluator, s: object.Obj, args: object.Obj) !usize {
+    var codes = std.ArrayList(eval.OpCode).init(e.allocator);
+    defer std.ArrayList(eval.OpCode).deinit(codes);
+
+    try emit_register_args(e, args, &codes);
+
+    try emit_begin(e, s, &codes, true);
+    const idx = e.compiled_funcs.items.len;
+    try std.ArrayList(eval.CompiledFunc).append(&e.compiled_funcs, eval.CompiledFunc {
+        .codes = std.ArrayList(eval.OpCode).toOwnedSlice(&codes),
+    });
+    return idx;
 }
 
 pub fn emit_func(e: *eval.Evaluator, s: object.Obj, args: object.Obj) !usize {

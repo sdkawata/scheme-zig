@@ -1,0 +1,22 @@
+(define (mandelbrot sx sy ex ey n)
+    (define diffx (/ (- ex sx) (- n 1)))
+    (define diffy (/ (- ey sy) (- n 1)))
+    (letrec ((loopy (lambda (ny)
+        (define cy (+ sy (* diffy ny)))
+        (letrec ((loopx (lambda (nx)
+                (define cx (+ sx (* diffx nx)))
+                (define result
+                    (letrec ((loop (lambda (n ci cr)
+                        (if (> (+ (* ci ci) (* cr cr)) 2)
+                            nx
+                            (if (> n 100)
+                                -1
+                                (loop (+ n 1) (+ (* ci cr 2) cy) (+ (* cr cr) (- (* ci ci)) cx)))))))
+                        (loop 0 0.0 0.0)))
+                (if (= result -1) (display #\space) (display #\*))
+                (if (= nx n) #f (loopx (+ nx 1))))))
+            (loopx 0))
+        (display #\newline)
+        (if (= ny n) #f (loopy (+ ny 1))))))
+        (loopy 0)))
+(mandelbrot -1.5 -1.0 0.5 1.0 20)
