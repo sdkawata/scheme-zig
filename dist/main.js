@@ -1,43 +1,35 @@
+const worker = new Worker('worker.js');
 
-let wasm;
+const execButton = window.document.getElementById("exec");
+function enableButton() {
+    execButton.innerHTML = 'exec';
+    execButton.disabled = false;
+}
 
-const debug = {
-    debug_out(ptr, size) {
-        // ascii only
-        var result = "";
-        const array = new Uint8Array(wasm.instance.exports.memory.buffer);
-        for (var i =0; i< size; i++) {
-            result += String.fromCharCode(array[ptr + i]);
-        }
-        window.document.getElementById("output_textarea").value += result;
+worker.onmessage = (e) => {
+    switch(e.data.type) {
+        case 'initialized':
+            enableButton();
+            break;
+        case 'finished':
+            window.document.getElementById("result").innerHTML = `elapsed: ${e.data.elapsed_msec} msec`;
+            enableButton();
+            break;
+        case 'debug_message':
+            window.document.getElementById("output_textarea").value += e.data.value;
+            break;
+        default:
+            console.log('unrekognizable message', e);
+            break;
     }
 }
-
-
-async function startWasm() {
-    const response = await fetch('main_wasm.wasm');
-    wasm = await WebAssembly.instantiate(await response.arrayBuffer(), {
-        debug,
-    });
-    console.log(wasm);
-    wasm.instance.exports._start();
-}
-
-function evalStr(s) {
-    const size = s.length;
-    const ptr = wasm.instance.exports.alloc_str(size);
-    console.log(ptr, size);
-    const array = new Uint8Array(wasm.instance.exports.memory.buffer);
-    for (var i =0; i< size; i++) {
-        array[ptr + i] = s.charCodeAt(i);
-    }
-    wasm.instance.exports.eval_str(ptr, size);
-    wasm.instance.exports.free_str(ptr, size);
-}
-
-startWasm();
 
 window.document.getElementById("exec").addEventListener("click", () => {
     window.document.getElementById("output_textarea").value = "";
-    evalStr(window.document.getElementById("input_textarea").value);
+    execButton.innerHTML = 'executing...';
+    execButton.disabled = true;
+    worker.postMessage({
+        type: 'start',
+        value: window.document.getElementById("input_textarea").value,
+    });
 });
