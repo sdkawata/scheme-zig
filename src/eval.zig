@@ -712,6 +712,73 @@ pub fn debug_print_func(e: *Evaluator, func_id: usize) void {
     debug_print("==end function {}==\n", .{func_id});
 }
 
+const OperandType = enum {
+    none,
+    number,
+    float,
+    symbol,
+};
+
+fn operand_type(tag: OpCodeTag) OperandType {
+    return switch(tag) {
+        .ret => .none,
+        .call => .none,
+        .tailcall => .none,
+        .lookup => .symbol,
+        .set_var => .symbol,
+        .cons => .none,
+        .car => .none,
+        .cdr => .none,
+        .dup_car => .none,
+        .dup_cdr => .none,
+        .push_number => .number,
+        .push_float => .float,
+        .push_char => .number,
+        .push_true => .none,
+        .push_false => .none,
+        .push_nil => .none,
+        .push_undef => .none,
+        .push_const => .number,
+        .new_frame => .none,
+        .push_new_var => .symbol,
+        .push_new_var_current => .symbol,
+        .set_frame => .none,
+        .set_frame_previous => .none,
+        .closure => .number,
+        .discard => .none,
+        .jmp => .number,
+        .jmp_if_false => .number,
+        .jmp_if_true_preserve_true => .number,
+    };
+}
+
+pub fn print_func(writer: anytype, e: *Evaluator, func_id: usize) !void {
+    try std.fmt.format(writer, "== function id:{} size:{} ==\n", .{func_id, e.compiled_funcs.items[func_id].codes.len});
+    const func = e.compiled_funcs.items[func_id];
+    for (func.codes) |code, i| {
+        try std.fmt.format(writer, "{:0>8}: {s}", .{i, @tagName(code.tag)});
+        switch (operand_type(code.tag)) {
+            .none => {},
+            .number => {
+                try std.fmt.format(writer, " {}", .{code.operand});
+            },
+            .float => {
+                try std.fmt.format(writer, " {}", .{@bitCast(f32, code.operand)});
+            },
+            .symbol => {
+                try std.fmt.format(writer, " {s}", .{e.pool.symbol_table.items[@intCast(usize, code.operand)]});
+            }
+        }
+        try std.fmt.format(writer, "\n", .{});
+    }
+}
+
+pub fn print_funcs(writer: anytype, e: *Evaluator) ! void {
+    for (e.compiled_funcs.items) |_, i| {
+        try print_func(writer, e, i);
+    }
+}
+
 pub fn debug_print_symbols(e: *Evaluator) void {
     debug_print("==symbol table==\n", .{});
     for (e.pool.symbol_table.items) |symbol, i| {

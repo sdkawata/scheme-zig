@@ -4,7 +4,8 @@ const eval = @import("eval.zig");
 const emit = @import("emit.zig");
 const object = @import("object.zig");
 const format = @import("format.zig");
-const debug_print = @import("debug.zig").debug_print;
+const debug = @import("debug.zig");
+const debug_print = debug.debug_print;
 
 pub fn main() void {
 }
@@ -34,6 +35,7 @@ fn eval_str_raw(s: [] const u8) !void {
             break;
         }
     } else unreachable;
+    try eval.print_funcs(debug.wasm_writer(1), evaluator);
 }
 
 export fn eval_str(ptr: usize, size: usize) void {

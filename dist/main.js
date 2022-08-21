@@ -18,6 +18,9 @@ worker.onmessage = (e) => {
         case 'stdout_message':
             window.document.getElementById("output_textarea").value += e.data.value;
             break;
+        case 'debug_message':
+            window.document.getElementById("debug_textarea").value += e.data.value;
+            break;
         default:
             console.log('unrekognizable message', e);
             break;
@@ -26,6 +29,7 @@ worker.onmessage = (e) => {
 
 window.document.getElementById("exec").addEventListener("click", () => {
     window.document.getElementById("output_textarea").value = "";
+    window.document.getElementById("debug_textarea").value = "";
     execButton.innerHTML = 'executing...';
     execButton.disabled = true;
     worker.postMessage({

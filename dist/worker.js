@@ -9,10 +9,17 @@ const debug = {
         for (var i =0; i< size; i++) {
             result += String.fromCharCode(array[ptr + i]);
         }
-        postMessage({
-            type: 'stdout_message',
-            value: result,
-        })
+        if (channel == 1) {
+            postMessage({
+                type: 'debug_message',
+                value: result,
+            })
+        } else {
+            postMessage({
+                type: 'stdout_message',
+                value: result,
+            })
+        }
     }
 }
 
