@@ -2,7 +2,7 @@
 let wasm;
 
 const debug = {
-    debug_out(ptr, size) {
+    debug_out(channel, ptr, size) {
         // ascii only
         var result = "";
         const array = new Uint8Array(wasm.instance.exports.memory.buffer);
@@ -10,7 +10,7 @@ const debug = {
             result += String.fromCharCode(array[ptr + i]);
         }
         postMessage({
-            type: 'debug_message',
+            type: 'stdout_message',
             value: result,
         })
     }

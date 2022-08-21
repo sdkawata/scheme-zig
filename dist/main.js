@@ -15,7 +15,7 @@ worker.onmessage = (e) => {
             window.document.getElementById("result").innerHTML = `elapsed: ${e.data.elapsed_msec} msec`;
             enableButton();
             break;
-        case 'debug_message':
+        case 'stdout_message':
             window.document.getElementById("output_textarea").value += e.data.value;
             break;
         default:
