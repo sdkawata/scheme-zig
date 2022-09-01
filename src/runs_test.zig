@@ -16,7 +16,7 @@ fn test_displayer(e:*eval.Evaluator, obj:object.Obj) anyerror!void {
 
 test "execute test scm files" {
     const allocator = std.testing.allocator;
-    const dir = try std.fs.cwd().openIterableDir("./tests/runs", .{});
+    const dir = try std.fs.cwd().openDir("./tests/runs", .{.iterate = true});
     var dir_iterator = dir.iterate();
     while (try dir_iterator.next()) |path| {
         if (!std.mem.eql(u8, ".scm", path.name[path.name.len-4..path.name.len])) {
