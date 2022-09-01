@@ -10,11 +10,11 @@ pub fn main() anyerror!void {
     const allocator = gpa.allocator();
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
-    _ = args.next() orelse {
+    _ = try args.next(allocator) orelse {
         std.debug.print("get arg error\n", .{});
         return;
     };
-    const fname = args.next() orelse {
+    const fname = try args.next(allocator) orelse {
         std.debug.print("get filename error\n", .{});
         return;
     };
